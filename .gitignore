@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.env
+.ipynb_checkpoints/
+
+# sessions and database
+*.session
+*.session-journal
+backend/backend_data.db*
+backend/temp_uploads/
+
+# Node.js
+node_modules/
+dist/
+.DS_Store
+
+# Docker local data
+data/

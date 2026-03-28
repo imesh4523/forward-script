@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  bot:
+    build: .
+    ports:
+      - "8001:8001"
+    volumes:
+      # Keep sessions and database persistent on the host
+      - ./data:/app
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: always
