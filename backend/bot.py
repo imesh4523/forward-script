@@ -242,7 +242,13 @@ async def logout_sender(phone):
 async def forward_message_to_group(channel_username, msg_id, group):
     try:
         snd = await get_sender_client()
-        await snd.forward_messages(group, msg_id, from_peer=channel_username)
+        # Resolve group entity first — handles both @username and numeric IDs
+        try:
+            entity = await snd.get_entity(group)
+        except Exception as entity_err:
+            add_log(f"⚠️ Skipping {group} — cannot resolve: {entity_err}", "warn")
+            return False
+        await snd.forward_messages(entity, msg_id, from_peer=channel_username)
         with SessionLocal() as db:
             conf = db.query(ForwardingConfig).first()
             if conf:
@@ -331,6 +337,12 @@ async def start_forwarding(src_id, src_hash, src_ph, snd_id, snd_hash, snd_ph,
             raise Exception("Sender account not authorized!")
 
         add_log(f"🤖 Bot started! Channel: {channel_username}, Msg: {msg_id}", "success")
+        # Mark as running in DB so sidebar shows correct status
+        with SessionLocal() as db:
+            fwd_conf = db.query(ForwardingConfig).first()
+            if fwd_conf:
+                fwd_conf.is_bot_running = True
+                db.commit()
         asyncio.create_task(hourly_forward_loop(channel_username, msg_id, groups, h_count, d_min, d_max))
 
     except Exception as e:
