@@ -66,14 +66,29 @@ async def send_source_code(api_id, api_hash, phone):
 async def sign_in_source(phone, code, password=None):
     global source_client, source_phone_code_hash
     try:
-        await source_client.sign_in(phone, code, password=password, phone_code_hash=source_phone_code_hash)
+        if password:
+            print(f"INFO: Attempting 2FA for {phone} with password...")
+            await source_client.sign_in(password=password)
+        else:
+            print(f"INFO: Attempting OTP sign-in for {phone}...")
+            await source_client.sign_in(phone, code, phone_code_hash=source_phone_code_hash)
+        
         ss = source_client.session.save()
         with SessionLocal() as db:
             conf = db.query(TelegramConfig).first()
-            if conf: conf.session_string = ss; db.commit()
+            if conf:
+                conf.session_string = ss
+                db.commit()
+        add_log(f"✅ Source account ({phone}) authenticated successfully!", "success")
         return True
-    except SessionPasswordNeededError: return "needs_password"
-    except Exception as e: raise e
+    except SessionPasswordNeededError:
+        print("INFO: 2FA Required for source.")
+        return "needs_password"
+    except Exception as e:
+        print(f"ERROR: Sign-in failed: {e}")
+        # If it says invalid code because we tried to use it again with password, just try with password alone
+        if "Password is required" in str(e): return "needs_password"
+        raise e
 
 async def send_sender_code(api_id, api_hash, phone):
     global sender_client, sender_phone_code_hash
@@ -87,14 +102,28 @@ async def send_sender_code(api_id, api_hash, phone):
 async def sign_in_sender(phone, code, password=None):
     global sender_client, sender_phone_code_hash
     try:
-        await sender_client.sign_in(phone, code, password=password, phone_code_hash=sender_phone_code_hash)
+        if password:
+            print(f"INFO: Attempting 2FA for {phone} with password...")
+            await sender_client.sign_in(password=password)
+        else:
+            print(f"INFO: Attempting OTP sign-in for {phone}...")
+            await sender_client.sign_in(phone, code, phone_code_hash=sender_phone_code_hash)
+            
         ss = sender_client.session.save()
         with SessionLocal() as db:
             conf = db.query(SenderConfig).first()
-            if conf: conf.session_string = ss; db.commit()
+            if conf:
+                conf.session_string = ss
+                db.commit()
+        add_log(f"✅ Sender account ({phone}) authenticated successfully!", "success")
         return True
-    except SessionPasswordNeededError: return "needs_password"
-    except Exception as e: raise e
+    except SessionPasswordNeededError:
+        print("INFO: 2FA Required for sender.")
+        return "needs_password"
+    except Exception as e:
+        print(f"ERROR: Sign-in failed: {e}")
+        if "Password is required" in str(e): return "needs_password"
+        raise e
 
 async def check_source_live(api_id, api_hash, phone):
     try:
