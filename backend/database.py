@@ -87,6 +87,7 @@ class ForwardingConfig(Base):
     delay_max = Column(Integer, default=120)
     hourly_count = Column(Integer, default=3)
     join_delay_minutes = Column(Integer, default=60)
+    total_sent_count = Column(Integer, default=0)
 
 # Grant permissions on public schema (required for DigitalOcean Managed PostgreSQL)
 def grant_schema_permissions():
@@ -116,6 +117,7 @@ def run_migrations():
                 "ALTER TABLE telegram_config ADD COLUMN session_string TEXT",
                 "ALTER TABLE sender_config ADD COLUMN session_string TEXT",
                 "ALTER TABLE target_groups ADD COLUMN is_sender_joined BOOLEAN DEFAULT FALSE",
+                "ALTER TABLE forwarding_config ADD COLUMN total_sent_count INTEGER DEFAULT 0",
             ]:
                 try:
                     session.execute(text(stmt))

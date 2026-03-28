@@ -269,6 +269,7 @@ function GroupsTab() {
   const [delayMax, setDelayMax] = useState(120)
   const [hourlyCount, setHourlyCount] = useState(3)
   const [joinDelay, setJoinDelay] = useState(60)
+  const [totalSent, setTotalSent] = useState(0)
   const [loading, setLoading] = useState(false)
   const [detecting, setDetecting] = useState(false)
   const [joinLinks, setJoinLinks] = useState('')
@@ -282,6 +283,7 @@ function GroupsTab() {
         setDelayMax(r.data.delay_max || 120)
         setHourlyCount(r.data.hourly_count || 3)
         setJoinDelay(r.data.join_delay_minutes || 60)
+        setTotalSent(r.data.total_sent_count || 0)
       }
     }).catch(() => {})
   }, [])
@@ -353,12 +355,18 @@ function GroupsTab() {
           </h2>
           <p className="text-slate-400 mt-1 text-sm">Manage groups for message forwarding</p>
         </div>
-        <button onClick={autoDetect} disabled={detecting}
-          className="flex items-center gap-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white px-4 py-2.5 rounded-xl transition-all font-medium text-sm cursor-pointer"
-          style={{ boxShadow: '0 4px 16px rgba(139,92,246,0.25)' }}>
-          {detecting ? <Loader size={15} className="animate-spin" /> : <Search size={15} />}
-          Auto-Detect Groups
-        </button>
+        <div className="flex items-center gap-4">
+          <div className="bg-emerald-500/5 px-4 py-2 rounded-xl border border-emerald-500/20 flex flex-col items-end shadow-inner h-full justify-center">
+            <span className="text-[10px] text-emerald-500/60 uppercase tracking-widest font-bold">Total Sent</span>
+            <span className="text-lg font-black text-emerald-400 leading-tight">{totalSent}</span>
+          </div>
+          <button onClick={autoDetect} disabled={detecting}
+            className="flex items-center gap-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white px-4 py-2.5 rounded-xl transition-all font-medium text-sm cursor-pointer"
+            style={{ boxShadow: '0 4px 16px rgba(139,92,246,0.25)' }}>
+            {detecting ? <Loader size={15} className="animate-spin" /> : <Search size={15} />}
+            Auto-Detect Groups
+          </button>
+        </div>
       </div>
 
       {/* Forwarding Settings */}

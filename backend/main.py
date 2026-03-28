@@ -357,8 +357,15 @@ def get_forwarding_config():
     with get_db() as db:
         config = db.query(ForwardingConfig).first()
         if not config:
-            return {"post_link": "", "delay_min": 30, "delay_max": 120, "hourly_count": 3, "join_delay_minutes": 60}
-        return {"post_link": config.post_link, "delay_min": config.delay_min, "delay_max": config.delay_max, "hourly_count": config.hourly_count, "join_delay_minutes": config.join_delay_minutes}
+            return {"post_link": "", "delay_min": 30, "delay_max": 120, "hourly_count": 3, "join_delay_minutes": 60, "total_sent_count": 0}
+        return {
+            "post_link": config.post_link, 
+            "delay_min": config.delay_min, 
+            "delay_max": config.delay_max, 
+            "hourly_count": config.hourly_count, 
+            "join_delay_minutes": config.join_delay_minutes,
+            "total_sent_count": config.total_sent_count or 0
+        }
 
 @app.post("/api/forwarding-config")
 def update_forwarding_config(data: ForwardConfigRequest):

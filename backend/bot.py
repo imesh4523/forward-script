@@ -6,7 +6,7 @@ from telethon.errors import SessionPasswordNeededError, FloodWaitError, ChatWrit
 from telethon.tl.functions.channels import JoinChannelRequest
 from telethon.tl.functions.messages import ImportChatInviteRequest
 from telethon.sessions import StringSession
-from database import SessionLocal, TelegramConfig, SenderConfig, TargetGroup
+from database import SessionLocal, TelegramConfig, SenderConfig, TargetGroup, ForwardingConfig
 
 # Two clients: source (watcher) and sender
 source_client = None
@@ -333,6 +333,17 @@ async def forward_message_to_group(channel_username, msg_id, group):
     """එක group එකකට post_link එකෙන් message කර forward කරනවා"""
     try:
         await sender_client.forward_messages(group, msg_id, from_peer=channel_username)
+        
+        # Increment total sent count in DB for dashboard tracking
+        try:
+            with SessionLocal() as db:
+                conf = db.query(ForwardingConfig).first()
+                if conf:
+                    if conf.total_sent_count is None: conf.total_sent_count = 0
+                    conf.total_sent_count += 1
+                    db.commit()
+        except: pass
+
         add_log(f"✓ Forwarded to {group}", "success")
         return True
     except ChatWriteForbiddenError:
