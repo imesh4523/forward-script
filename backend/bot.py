@@ -5,6 +5,8 @@ from telethon import TelegramClient, events, Button
 from telethon.errors import SessionPasswordNeededError, FloodWaitError, ChatWriteForbiddenError
 from telethon.tl.functions.channels import JoinChannelRequest
 from telethon.tl.functions.messages import ImportChatInviteRequest
+from telethon.sessions import StringSession
+from database import SessionLocal, TelegramConfig, SenderConfig, TargetGroup
 
 # Two clients: source (watcher) and sender
 source_client = None
@@ -23,18 +25,24 @@ def add_log(message, log_type="info"):
 # --- Source Client (Channel Watcher) ---
 async def init_source_client(api_id, api_hash, phone):
     global source_client
-    clean_phone = phone.replace('+', '').strip()
-    session_name = f'session_source_{clean_phone}'
     
-    print(f"DEBUG: init_source_client for {phone} (Session: {session_name})")
+    # Get stored session string from DB if available
+    session_str = None
+    with SessionLocal() as db:
+        conf = db.query(TelegramConfig).first()
+        if conf: session_str = conf.session_string
+
+    clean_phone = phone.replace('+', '').strip()
+    session_target = StringSession(session_str) if session_str else f'session_source_{clean_phone}'
+    
+    print(f"DEBUG: init_source_client for {phone} (Session: {'String' if session_str else 'File'})")
     
     if source_client:
         try:
             if source_client.is_connected():
-                # Check if it's the SAME session file
-                current_session = str(getattr(source_client.session, 'filename', ''))
-                if session_name in current_session:
-                    print("DEBUG: Reusing existing source_client connection")
+                # For StringSession, we check if api_id matches
+                if source_client.api_id == int(api_id):
+                    print("DEBUG: Reusing existing source_client")
                     return source_client
             print("DEBUG: Disconnecting old source_client")
             await asyncio.wait_for(source_client.disconnect(), timeout=5)
@@ -42,7 +50,7 @@ async def init_source_client(api_id, api_hash, phone):
             print(f"DEBUG: Error during old source_client cleanup: {e}")
     
     print("DEBUG: Creating new TelegramClient instance")
-    source_client = TelegramClient(session_name, int(api_id), api_hash)
+    source_client = TelegramClient(session_target, int(api_id), api_hash)
     try:
         print("DEBUG: Awaiting connect()...")
         await asyncio.wait_for(source_client.connect(), timeout=15)
@@ -70,6 +78,16 @@ async def sign_in_source(phone, code, password=None):
             await source_client.sign_in(password=password)
         else:
             await source_client.sign_in(phone, code)
+        
+        # Save StringSession to DB for stateless environments
+        session_str = source_client.session.save()
+        with SessionLocal() as db:
+            conf = db.query(TelegramConfig).first()
+            if conf:
+                conf.session_string = session_str
+                conf.is_authenticated = True
+                db.commit()
+
         add_log("✅ Source account authenticated!", "success")
         return True
     except SessionPasswordNeededError:
@@ -130,13 +148,8 @@ async def init_sender_client(api_id, api_hash, phone):
         await asyncio.wait_for(sender_client.connect(), timeout=15)
         print("DEBUG: Connection successful")
         return sender_client
-    except asyncio.TimeoutError:
-        print("DEBUG: connect() timed out after 15s")
-        add_log("❌ Connection timed out for Sender. Please try again or restart backend.", "error")
-        raise Exception("Connection timed out")
     except Exception as e:
-        print(f"DEBUG: connect() error: {e}")
-        add_log(f"❌ Connection error: {str(e)}", "error")
+        add_log(f"❌ Sender connection error: {str(e)}", "error")
         raise e
 
 async def send_sender_code(api_id, api_hash, phone):
@@ -152,6 +165,16 @@ async def sign_in_sender(phone, code, password=None):
             await sender_client.sign_in(password=password)
         else:
             await sender_client.sign_in(phone, code)
+        
+        # Save StringSession to DB 
+        session_str = sender_client.session.save()
+        with SessionLocal() as db:
+            conf = db.query(SenderConfig).first()
+            if conf:
+                conf.session_string = session_str
+                conf.is_authenticated = True
+                db.commit()
+
         add_log("✅ Sender account authenticated!", "success")
         return True
     except SessionPasswordNeededError:
