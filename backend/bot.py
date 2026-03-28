@@ -90,16 +90,22 @@ async def get_sender_client():
 # ─────────────────────────────────────────────
 async def send_source_code(api_id, api_hash, phone):
     global source_client, source_phone_code_hash
-    # Try existing session first
+    # Try existing session first — if revoked, fall back to fresh login
     data = _load_source_conf()
     ss = data[2] if data else ""
-    source_client = TelegramClient(StringSession(ss), api_id, api_hash)
-    await source_client.connect()
-    if await source_client.is_user_authorized():
-        print(f"INFO: Source already authorized via saved session!")
-        return None  # Already authenticated — no OTP needed
+    if ss:
+        try:
+            source_client = TelegramClient(StringSession(ss), api_id, api_hash)
+            await source_client.connect()
+            if await source_client.is_user_authorized():
+                print(f"INFO: Source already authorized via saved session!")
+                return None  # Already authenticated — no OTP needed
+        except Exception as e:
+            print(f"WARN: Existing source session invalid ({e}), starting fresh login...")
+            await source_client.disconnect()
+            source_client = None
 
-    # Fresh login
+    # Fresh login (empty session)
     source_client = TelegramClient(StringSession(""), api_id, api_hash)
     await source_client.connect()
     res = await source_client.send_code_request(phone)
@@ -134,16 +140,24 @@ async def sign_in_source(phone, code, password=None):
 # ─────────────────────────────────────────────
 async def send_sender_code(api_id, api_hash, phone):
     global sender_client, sender_phone_code_hash
-    # Try existing session first
+    # Try existing session first — if revoked, fall back to fresh login
     data = _load_sender_conf()
     ss = data[2] if data else ""
-    sender_client = TelegramClient(StringSession(ss), api_id, api_hash)
-    await sender_client.connect()
-    if await sender_client.is_user_authorized():
-        print(f"INFO: Sender already authorized via saved session!")
-        return None  # Already authenticated — no OTP needed
+    if ss:
+        try:
+            sender_client = TelegramClient(StringSession(ss), api_id, api_hash)
+            await sender_client.connect()
+            if await sender_client.is_user_authorized():
+                print(f"INFO: Sender already authorized via saved session!")
+                return None  # Already authenticated — no OTP needed
+        except Exception as e:
+            print(f"WARN: Existing sender session invalid ({e}), starting fresh login...")
+            try:
+                await sender_client.disconnect()
+            except: pass
+            sender_client = None
 
-    # Fresh login
+    # Fresh login (empty session)
     sender_client = TelegramClient(StringSession(""), api_id, api_hash)
     await sender_client.connect()
     res = await sender_client.send_code_request(phone)
