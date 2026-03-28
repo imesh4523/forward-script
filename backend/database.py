@@ -88,30 +88,40 @@ class ForwardingConfig(Base):
     hourly_count = Column(Integer, default=3)
     join_delay_minutes = Column(Integer, default=60)
 
-# Create tables
-Base.metadata.create_all(bind=engine)
+# Grant permissions on public schema (required for DigitalOcean Managed PostgreSQL)
+def grant_schema_permissions():
+    if not is_sqlite:
+        try:
+            with engine.connect() as conn:
+                conn.execute(text("GRANT ALL ON SCHEMA public TO PUBLIC"))
+                conn.commit()
+                print("INFO: Granted schema permissions.")
+        except Exception as e:
+            print(f"INFO: Schema grant skipped (may already exist): {e}")
 
-# Migration Helper: Add session_string if missing
+grant_schema_permissions()
+
+# Create tables
+try:
+    Base.metadata.create_all(bind=engine)
+    print("INFO: Tables created/verified successfully.")
+except Exception as e:
+    print(f"ERROR: Could not create tables: {e}")
+
+# Migration Helper: Add session_string column if missing (for upgrades)
 def run_migrations():
     try:
         with SessionLocal() as session:
-            # Check telegram_config
-            try:
-                session.execute(text("ALTER TABLE telegram_config ADD COLUMN session_string TEXT"))
-                session.commit()
-            except: session.rollback()
-            
-            # Check sender_config
-            try:
-                session.execute(text("ALTER TABLE sender_config ADD COLUMN session_string TEXT"))
-                session.commit()
-            except: session.rollback()
-            
-            # Check target_groups
-            try:
-                session.execute(text("ALTER TABLE target_groups ADD COLUMN is_sender_joined BOOLEAN DEFAULT 0"))
-                session.commit()
-            except: session.rollback()
+            for stmt in [
+                "ALTER TABLE telegram_config ADD COLUMN session_string TEXT",
+                "ALTER TABLE sender_config ADD COLUMN session_string TEXT",
+                "ALTER TABLE target_groups ADD COLUMN is_sender_joined BOOLEAN DEFAULT FALSE",
+            ]:
+                try:
+                    session.execute(text(stmt))
+                    session.commit()
+                except:
+                    session.rollback()
     except Exception as e:
         print(f"Migration hint: {e}")
 

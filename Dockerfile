@@ -10,22 +10,31 @@ RUN npm run build
 FROM python:3.11-slim
 WORKDIR /app
 
-# Install dependencies for system
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
+# Install system dependencies
+RUN apt-get update && apt-get install -y build-essential && rm -rf /var/lib/apt/lists/*
 
-# Copy backend
+# Create non-root user
+RUN useradd -m appuser
+
+# Create and activate virtual environment (avoids pip-as-root warning)
+RUN python -m venv /app/venv
+ENV PATH="/app/venv/bin:$PATH"
+
+# Install Python dependencies inside venv
 COPY backend/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Copy backend files
 COPY backend/ ./
 
-# Copy built frontend from Stage 1 into backend's dist folder
+# Copy built frontend
 COPY --from=builder /app/frontend/dist ./dist
 
-# Expose port
+# Set ownership
+RUN chown -R appuser:appuser /app
+USER appuser
+
 EXPOSE 8001
 
-# Run use gunicorn or uvicorn
+# Bind to 0.0.0.0 explicitly
 CMD ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001"]
