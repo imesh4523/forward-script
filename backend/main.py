@@ -22,6 +22,30 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.on_event("startup")
+async def startup_event():
+    """Ensure all tables exist on startup - critical for cloud deployments."""
+    from database import engine, Base, DATABASE_URL
+    from sqlalchemy import text
+
+    safe_url = DATABASE_URL.split("@")[-1] if "@" in DATABASE_URL else DATABASE_URL
+    print(f"INFO: Using database at: {safe_url}")
+
+    if not DATABASE_URL.startswith("sqlite"):
+        try:
+            with engine.connect() as conn:
+                conn.execute(text("GRANT ALL ON SCHEMA public TO PUBLIC"))
+                conn.commit()
+                print("INFO: Schema permissions granted.")
+        except Exception as e:
+            print(f"INFO: Schema grant skipped: {e}")
+
+    try:
+        Base.metadata.create_all(bind=engine)
+        print("INFO: All tables verified/created successfully.")
+    except Exception as e:
+        print(f"ERROR: Table creation failed: {e}")
+
 @contextmanager
 def get_db():
     db = SessionLocal()
