@@ -218,13 +218,36 @@ async def hourly_forward_loop(channel_username, msg_id, groups, hourly_count, de
 async def start_forwarding(src_id, src_hash, src_ph, snd_id, snd_hash, snd_ph, post_link, groups, d_min, d_max, h_count):
     global is_running
     is_running = True
-    link = post_link.strip().rstrip('/')
-    parts = link.split('/')
-    if len(parts) < 2: add_log("❌ Bad link!", "error"); is_running = False; return
-    msg_id = int(parts[-1]); u = parts[-2]
-    if u == 'c': u = int("-100" + parts[-3])
-    add_log(f"🤖 Bot started! Cyclic forwarding active.", "success")
-    asyncio.create_task(hourly_forward_loop(u, msg_id, groups, h_count, d_min, d_max))
+    
+    try:
+        link = post_link.strip().rstrip('/')
+        parts = link.split('/')
+        if len(parts) < 2:
+            raise Exception("Invalid post link format!")
+        
+        msg_id = int(parts[-1])
+        # Handle Private Channel links: https://t.me/c/123456789/10 -> parts[-3] is 'c'
+        if len(parts) >= 4 and parts[-3] == 'c':
+            channel_username = int("-100" + parts[-2])
+        else:
+            channel_username = parts[-2]
+            
+        # Initialize clients to ensure we are auth'd before launching loop
+        add_log("🔄 Initializing clients for forwarding...", "info")
+        src = await get_source_client()
+        snd = await get_sender_client()
+        
+        if not (await src.is_user_authorized() and await snd.is_user_authorized()):
+            add_log("❌ One or both accounts not authenticated! Bot stopping.", "error")
+            is_running = False
+            return
+
+        add_log(f"🤖 Bot started! Monitoring: {channel_username} (ID: {msg_id})", "success")
+        asyncio.create_task(hourly_forward_loop(channel_username, msg_id, groups, h_count, d_min, d_max))
+        
+    except Exception as e:
+        add_log(f"❌ Startup Error: {str(e)}", "error")
+        is_running = False
 
 async def stop_forwarding():
     global is_running; is_running = False
