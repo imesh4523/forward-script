@@ -56,9 +56,19 @@ async def get_sender_client(api_id=None, api_hash=None, phone=None):
 
 async def send_source_code(api_id, api_hash, phone):
     global source_client, source_phone_code_hash
+    with SessionLocal() as db:
+        conf = db.query(TelegramConfig).first()
+        ss = conf.session_string if conf else ""
+    
+    source_client = TelegramClient(StringSession(ss), api_id, api_hash)
+    await source_client.connect()
+    if await source_client.is_user_authorized(): 
+        print(f"INFO: Source account {phone} already authorized via DB session!")
+        return None # No OTP needed
+    
+    # If not authorized, start a fresh login session
     source_client = TelegramClient(StringSession(""), api_id, api_hash)
     await source_client.connect()
-    if await source_client.is_user_authorized(): return None # Already auth
     res = await source_client.send_code_request(phone)
     source_phone_code_hash = res.phone_code_hash
     return True
@@ -67,10 +77,10 @@ async def sign_in_source(phone, code, password=None):
     global source_client, source_phone_code_hash
     try:
         if password:
-            print(f"INFO: Attempting 2FA for {phone} with password...")
+            print(f"INFO: Attempting 2FA with password...")
             await source_client.sign_in(password=password)
         else:
-            print(f"INFO: Attempting OTP sign-in for {phone}...")
+            print(f"INFO: Attempting OTP sign-in...")
             await source_client.sign_in(phone, code, phone_code_hash=source_phone_code_hash)
         
         ss = source_client.session.save()
@@ -78,23 +88,29 @@ async def sign_in_source(phone, code, password=None):
             conf = db.query(TelegramConfig).first()
             if conf:
                 conf.session_string = ss
+                conf.is_authenticated = True
                 db.commit()
-        add_log(f"✅ Source account ({phone}) authenticated successfully!", "success")
+        print(f"INFO: Session string saved to DB. Length: {len(ss)}")
+        add_log(f"✅ Source account ({phone}) authenticated and saved!", "success")
         return True
-    except SessionPasswordNeededError:
-        print("INFO: 2FA Required for source.")
-        return "needs_password"
-    except Exception as e:
-        print(f"ERROR: Sign-in failed: {e}")
-        # If it says invalid code because we tried to use it again with password, just try with password alone
-        if "Password is required" in str(e): return "needs_password"
-        raise e
+    except SessionPasswordNeededError: return "needs_password"
+    except Exception as e: raise e
 
 async def send_sender_code(api_id, api_hash, phone):
     global sender_client, sender_phone_code_hash
+    with SessionLocal() as db:
+        conf = db.query(SenderConfig).first()
+        ss = conf.session_string if conf else ""
+        
+    sender_client = TelegramClient(StringSession(ss), api_id, api_hash)
+    await sender_client.connect()
+    if await sender_client.is_user_authorized(): 
+        print(f"INFO: Sender account {phone} already authorized via DB session!")
+        return None # No OTP needed
+        
+    # If not authorized, start a fresh login session
     sender_client = TelegramClient(StringSession(""), api_id, api_hash)
     await sender_client.connect()
-    if await sender_client.is_user_authorized(): return None # Already auth
     res = await sender_client.send_code_request(phone)
     sender_phone_code_hash = res.phone_code_hash
     return True
@@ -103,10 +119,10 @@ async def sign_in_sender(phone, code, password=None):
     global sender_client, sender_phone_code_hash
     try:
         if password:
-            print(f"INFO: Attempting 2FA for {phone} with password...")
+            print(f"INFO: Attempting 2FA with password...")
             await sender_client.sign_in(password=password)
         else:
-            print(f"INFO: Attempting OTP sign-in for {phone}...")
+            print(f"INFO: Attempting OTP sign-in...")
             await sender_client.sign_in(phone, code, phone_code_hash=sender_phone_code_hash)
             
         ss = sender_client.session.save()
@@ -114,16 +130,13 @@ async def sign_in_sender(phone, code, password=None):
             conf = db.query(SenderConfig).first()
             if conf:
                 conf.session_string = ss
+                conf.is_authenticated = True
                 db.commit()
-        add_log(f"✅ Sender account ({phone}) authenticated successfully!", "success")
+        print(f"INFO: Session string saved to DB. Length: {len(ss)}")
+        add_log(f"✅ Sender account ({phone}) authenticated and saved!", "success")
         return True
-    except SessionPasswordNeededError:
-        print("INFO: 2FA Required for sender.")
-        return "needs_password"
-    except Exception as e:
-        print(f"ERROR: Sign-in failed: {e}")
-        if "Password is required" in str(e): return "needs_password"
-        raise e
+    except SessionPasswordNeededError: return "needs_password"
+    except Exception as e: raise e
 
 async def check_source_live(api_id, api_hash, phone):
     try:
