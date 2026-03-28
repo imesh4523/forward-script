@@ -53,24 +53,34 @@ def _load_sender_conf():
 
 async def get_source_client():
     global source_client
-    if source_client and source_client.is_connected():
+    # Reuse existing connected client — NEVER create a second one with same session
+    if source_client is not None:
+        if not source_client.is_connected():
+            await source_client.connect()
         return source_client
     data = _load_source_conf()
     if not data:
         return None
     api_id, api_hash, ss = data
+    if not ss:
+        return None  # No session saved yet
     source_client = TelegramClient(StringSession(ss), api_id, api_hash)
     await source_client.connect()
     return source_client
 
 async def get_sender_client():
     global sender_client
-    if sender_client and sender_client.is_connected():
+    # Reuse existing connected client — NEVER create a second one with same session
+    if sender_client is not None:
+        if not sender_client.is_connected():
+            await sender_client.connect()
         return sender_client
     data = _load_sender_conf()
     if not data:
         return None
     api_id, api_hash, ss = data
+    if not ss:
+        return None  # No session saved yet
     sender_client = TelegramClient(StringSession(ss), api_id, api_hash)
     await sender_client.connect()
     return sender_client
