@@ -895,6 +895,21 @@ function App() {
   const [botStatus, setBotStatus] = useState('stopped')
   const [logs, setLogs] = useState([])
 
+  useEffect(() => {
+    // Initial status check
+    axios.get(`${API}/bot/status`).then(r => {
+      setBotStatus(r.data.status)
+    }).catch(() => {})
+
+    // Auto refresh logs when tab is status
+    const interval = setInterval(() => {
+      refreshLogs()
+      // Also occasionally sync status
+      axios.get(`${API}/bot/status`).then(r => setBotStatus(r.data.status)).catch(() => {})
+    }, 5000)
+    return () => clearInterval(interval)
+  }, [])
+
   const addLog = (message, type = 'info') => {
     const time = new Date().toLocaleTimeString()
     setLogs(p => [...p, { message, type, time }])

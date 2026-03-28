@@ -426,6 +426,14 @@ async def api_test_forward(data: TestForwardRequest):
     else:
         raise HTTPException(status_code=400, detail=result.get("error"))
 
+@app.get("/api/bot/status")
+def get_bot_status():
+    global _bot_task
+    status = "stopped"
+    if _bot_task and not _bot_task.done():
+        status = "running"
+    return {"status": status}
+
 @app.post("/api/bot/start")
 async def start_bot():
     global _bot_task
