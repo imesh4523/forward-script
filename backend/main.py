@@ -46,6 +46,16 @@ async def startup_event():
     except Exception as e:
         print(f"ERROR: Table creation failed: {e}")
 
+    # Auto-resume bot if it was marked as running in DB
+    try:
+        with get_db() as db:
+            fwd = db.query(ForwardingConfig).first()
+            if fwd and fwd.is_bot_running:
+                print("INFO: Auto-resuming bot as per DB state...")
+                asyncio.create_task(start_bot())
+    except Exception as e:
+        print(f"INFO: Auto-resume skipped: {e}")
+
 @contextmanager
 def get_db():
     db = SessionLocal()
@@ -83,6 +93,7 @@ class ForwardConfigRequest(BaseModel):
     hourly_count: Optional[int] = 3
     join_delay_minutes: Optional[int] = 60
     total_sent_count: Optional[int] = 0
+    is_bot_running: Optional[bool] = False
 
 class JoinRequest(BaseModel):
     group_links: List[str]
@@ -365,7 +376,8 @@ def get_forwarding_config():
             "delay_max": config.delay_max, 
             "hourly_count": config.hourly_count, 
             "join_delay_minutes": config.join_delay_minutes,
-            "total_sent_count": config.total_sent_count or 0
+            "total_sent_count": config.total_sent_count or 0,
+            "is_bot_running": config.is_bot_running or False
         }
 
 @app.post("/api/forwarding-config")
@@ -457,6 +469,10 @@ async def start_bot():
         snd_api_id, snd_api_hash, snd_phone = sender_config.api_id, sender_config.api_hash, sender_config.phone_number
         post_link = fwd.post_link
         d_min, d_max, h_count = fwd.delay_min, fwd.delay_max, fwd.hourly_count
+        
+        # Mark as running in DB
+        fwd.is_bot_running = True
+        db.commit()
 
     _bot_task = asyncio.create_task(
         bot.start_forwarding(src_api_id, src_api_hash, src_phone, snd_api_id, snd_api_hash, snd_phone, post_link, group_list, d_min, d_max, h_count)
@@ -466,6 +482,11 @@ async def start_bot():
 @app.post("/api/bot/stop")
 async def stop_bot():
     global _bot_task
+    with get_db() as db:
+        fwd = db.query(ForwardingConfig).first()
+        if fwd:
+            fwd.is_bot_running = False
+            db.commit()
     await bot.stop_forwarding()
     if _bot_task:
         _bot_task.cancel()
