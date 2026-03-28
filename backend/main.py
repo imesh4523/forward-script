@@ -77,11 +77,12 @@ class GroupSelectUpdate(BaseModel):
     is_selected: bool
 
 class ForwardConfigRequest(BaseModel):
-    post_link: str
-    delay_min: int = 30
-    delay_max: int = 120
-    hourly_count: int = 3
-    join_delay_minutes: int = 60
+    post_link: Optional[str] = ""
+    delay_min: Optional[int] = 30
+    delay_max: Optional[int] = 120
+    hourly_count: Optional[int] = 3
+    join_delay_minutes: Optional[int] = 60
+    total_sent_count: Optional[int] = 0
 
 class JoinRequest(BaseModel):
     group_links: List[str]
@@ -369,19 +370,35 @@ def get_forwarding_config():
 
 @app.post("/api/forwarding-config")
 def update_forwarding_config(data: ForwardConfigRequest):
-    with get_db() as db:
-        config = db.query(ForwardingConfig).first()
-        if not config:
-            config = ForwardingConfig(post_link=data.post_link, delay_min=data.delay_min, delay_max=data.delay_max, hourly_count=data.hourly_count, join_delay_minutes=data.join_delay_minutes)
-            db.add(config)
-        else:
-            config.post_link = data.post_link
-            config.delay_min = data.delay_min
-            config.delay_max = data.delay_max
-            config.hourly_count = data.hourly_count
-            config.join_delay_minutes = data.join_delay_minutes
-        db.commit()
-    return {"status": "success"}
+    print(f"INFO: Updating forwarding config: {data.model_dump()}")
+    try:
+        with get_db() as db:
+            config = db.query(ForwardingConfig).first()
+            if not config:
+                config = ForwardingConfig(
+                    post_link=data.post_link, 
+                    delay_min=data.delay_min, 
+                    delay_max=data.delay_max, 
+                    hourly_count=data.hourly_count, 
+                    join_delay_minutes=data.join_delay_minutes,
+                    total_sent_count=data.total_sent_count or 0
+                )
+                db.add(config)
+            else:
+                config.post_link = data.post_link
+                config.delay_min = data.delay_min
+                config.delay_max = data.delay_max
+                config.hourly_count = data.hourly_count
+                config.join_delay_minutes = data.join_delay_minutes
+                # Only update count if explicitly sent as non-zero or it's currently null
+                if data.total_sent_count is not None:
+                    config.total_sent_count = data.total_sent_count
+            db.commit()
+            print("INFO: Forwarding config saved successfully.")
+        return {"status": "success"}
+    except Exception as e:
+        print(f"ERROR: Failed to save config: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # ============================================
 # BOT CONTROL

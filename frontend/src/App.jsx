@@ -328,7 +328,14 @@ function GroupsTab() {
 
   const saveForwardConfig = async () => {
     try {
-      await axios.post(`${API}/forwarding-config`, { post_link: postLink, delay_min: delayMin, delay_max: delayMax, hourly_count: hourlyCount, join_delay_minutes: joinDelay })
+      await axios.post(`${API}/forwarding-config`, { 
+        post_link: postLink, 
+        delay_min: delayMin, 
+        delay_max: delayMax, 
+        hourly_count: hourlyCount, 
+        join_delay_minutes: joinDelay,
+        total_sent_count: totalSent
+      })
       toast.success('Settings saved!')
     } catch { toast.error('Failed') }
   }
