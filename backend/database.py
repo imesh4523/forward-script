@@ -10,6 +10,13 @@ DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./backend_data.db")
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
+# Ensure SSL mode for PostgreSQL (required for DO Managed DB)
+if "postgresql" in DATABASE_URL and "sslmode" not in DATABASE_URL:
+    if "?" in DATABASE_URL:
+        DATABASE_URL += "&sslmode=require"
+    else:
+        DATABASE_URL += "?sslmode=require"
+
 is_sqlite = DATABASE_URL.startswith("sqlite")
 
 connect_args = {}
