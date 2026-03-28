@@ -441,14 +441,27 @@ async def api_test_forward(data: TestForwardRequest):
 @app.get("/api/bot/status")
 def get_bot_status():
     global _bot_task
-    status = "stopped"
+    # Check in-memory task first
     if _bot_task and not _bot_task.done():
-        status = "running"
-    return {"status": status}
+        return {"status": "running"}
+    # Fallback: check DB (authoritative after restarts)
+    try:
+        with get_db() as db:
+            fwd = db.query(ForwardingConfig).first()
+            if fwd and fwd.is_bot_running:
+                return {"status": "running"}
+    except:
+        pass
+    return {"status": "stopped"}
 
 @app.post("/api/bot/start")
 async def start_bot():
     global _bot_task
+    
+    # Prevent double-start
+    if _bot_task and not _bot_task.done():
+        return {"status": "already_running", "message": "Bot is already running"}
+
     with get_db() as db:
         source_config = db.query(TelegramConfig).first()
         sender_config = db.query(SenderConfig).first()

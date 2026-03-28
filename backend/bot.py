@@ -242,13 +242,12 @@ async def logout_sender(phone):
 async def forward_message_to_group(channel_username, msg_id, group):
     try:
         snd = await get_sender_client()
-        # Resolve group entity first — handles both @username and numeric IDs
-        try:
-            entity = await snd.get_entity(group)
-        except Exception as entity_err:
-            add_log(f"⚠️ Skipping {group} — cannot resolve: {entity_err}", "warn")
-            return False
-        await snd.forward_messages(entity, msg_id, from_peer=channel_username)
+        # Convert numeric string IDs to int for proper Telethon resolution
+        if isinstance(group, str) and group.lstrip('-').isdigit():
+            target = int(group)
+        else:
+            target = group
+        await snd.forward_messages(target, msg_id, from_peer=channel_username)
         with SessionLocal() as db:
             conf = db.query(ForwardingConfig).first()
             if conf:
@@ -260,7 +259,11 @@ async def forward_message_to_group(channel_username, msg_id, group):
         add_log(f"🚫 No write permission: {group}", "error")
         return False
     except Exception as e:
-        add_log(f"✗ Error forwarding to {group}: {e}", "error")
+        err = str(e)
+        if "Cannot find any entity" in err or "Could not find the input entity" in err:
+            add_log(f"⚠️ Skipping {group} — sender not joined or group unavailable", "warn")
+        else:
+            add_log(f"✗ Error forwarding to {group}: {err}", "error")
         return False
 
 async def hourly_forward_loop(channel_username, msg_id, groups, hourly_count, delay_min, delay_max):
