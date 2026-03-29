@@ -428,7 +428,19 @@ async def auto_detect_from_source(src_id, src_hash, src_ph, snd_id, snd_hash, sn
     add_log("🔍 Detecting groups from Source...", "info")
     source_groups = []
     async for d in src.iter_dialogs():
-        if d.is_group or d.is_channel:
+        is_sendable = False
+        if d.is_group:
+            is_sendable = True
+        elif d.is_channel:
+            # For channels, only include if it's a megagroup (supergroup) or user is admin
+            entity = d.entity
+            if getattr(entity, 'megagroup', False):
+                is_sendable = True
+            elif getattr(entity, 'creator', False) or (getattr(entity, 'admin_rights', None)):
+                # If it's a broadcast but user is admin/creator, they can send
+                is_sendable = True
+        
+        if is_sendable:
             username = getattr(d.entity, 'username', None)
             ident = f"@{username}" if username else str(d.id)
             source_groups.append({"group_id_or_username": ident, "group_title": d.title, "id": d.id})
@@ -445,7 +457,7 @@ async def auto_detect_from_source(src_id, src_hash, src_ph, snd_id, snd_hash, sn
         }
         for g in source_groups
     ]
-    add_log(f"✅ Found {len(final)} groups.", "success")
+    add_log(f"✅ Found {len(final)} sendable groups.", "success")
     return {"success": True, "groups": final}
 
 async def auto_join_group(link):
