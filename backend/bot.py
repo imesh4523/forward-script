@@ -295,74 +295,61 @@ async def forward_message_to_group(channel_username, msg_id, group):
 async def hourly_forward_loop(channel_username, msg_id, groups, hourly_count, delay_min, delay_max):
     global is_running, forward_stats
     cycle_num = 0
+    cycle_rest_minutes = 5 # Default rest between full cycles
+    
     while is_running:
         try:
             cycle_num += 1
+            add_log(f"🚀 Starting Full Burst Cycle #{cycle_num}...", "info")
+            
             # ── Smart Filter: only send to groups sender has JOINED ──
-            add_log(f"🔍 Checking joined groups (Cycle #{cycle_num})...", "info")
             joined_ids = await get_sender_joined_ids()
             
             all_groups = groups.copy()
             joined_groups = []
-            not_joined = []
             for g in all_groups:
-                # Check by username or numeric ID
                 g_key = g.lower() if isinstance(g, str) and g.startswith('@') else g
                 num_id = int(g) if isinstance(g, str) and g.lstrip('-').isdigit() else None
                 if g_key in joined_ids or (num_id and num_id in joined_ids):
                     joined_groups.append(g)
-                else:
-                    not_joined.append(g)
-
-            add_log(f"📊 Cycle #{cycle_num}: {len(joined_groups)} joined | {len(not_joined)} not joined (skipping)", "info")
-            if not_joined:
-                add_log(f"⏭️ Not joined: {', '.join(str(g) for g in not_joined[:5])}{'...' if len(not_joined)>5 else ''}", "warn")
 
             if not joined_groups:
-                add_log("📋 No joined groups to forward to! Waiting 60s...", "warn")
+                add_log("📋 No joined groups! Waiting 60s to retry...", "warn")
                 await asyncio.sleep(60)
                 continue
 
+            add_log(f"📊 Cycle #{cycle_num}: Forwarding to ALL {len(joined_groups)} joined groups at once...", "success")
+            
             # Reset stats for this cycle
             forward_stats = {"success": 0, "skipped": 0, "failed": 0, "total": len(joined_groups)}
-            queue = joined_groups.copy()
+            
+            for group in joined_groups:
+                if not is_running:
+                    break
+                    
+                # Forward to current group
+                await forward_message_to_group(channel_username, msg_id, group)
+                
+                # Small delay between groups to avoid instant ban but essentially "burst"
+                wait = random.uniform(delay_min, delay_max)
+                if wait > 0 and is_running:
+                    # If user set huge delays, we still obey them, but usually they'll set 1-5s for burst
+                    await asyncio.sleep(wait)
 
-            while is_running and queue:
-                batch = min(hourly_count, len(queue))
-                if batch > 0:
-                    send_times = sorted(random.sample(range(0, 3600), batch))
-                    start = time.time()
-                    for send_at in send_times:
-                        if not is_running or not queue:
-                            break
-                        wait = send_at - (time.time() - start)
-                        if wait > 0:
-                            mins = int(wait)//60
-                            secs = int(wait)%60
-                            add_log(f"⏳ Next forward in {mins}m {secs}s...", "info")
-                            await asyncio.sleep(wait)
-                        if not is_running or not queue:
-                            break
-                        group = queue.pop(0)
-                        await forward_message_to_group(channel_username, msg_id, group)
-
-                    if not queue:
-                        s = forward_stats
-                        add_log(
-                            f"🎉 Cycle #{cycle_num} done! "
-                            f"✅ {s['success']} sent | ❌ {s['failed']} failed | ⚠️ {s['skipped']} skipped "
-                            f"| Total: {s['total']} groups. Restarting in 60s.",
-                            "success"
-                        )
-                        await asyncio.sleep(60)
+            if is_running:
+                s = forward_stats
+                add_log(
+                    f"🎉 Cycle #{cycle_num} Complete! "
+                    f"✅ {s['success']} sent | ❌ {s['failed']} failed | 📊 Total: {s['total']} "
+                    f"Next full cycle in {cycle_rest_minutes} minutes.",
+                    "success"
+                )
+                # Wait for next cycle (5 mins as requested)
+                # We use seconds for asyncio.sleep
+                for _ in range(cycle_rest_minutes * 60):
+                    if not is_running:
                         break
-
-                    remaining = 3600 - (time.time() - start)
-                    if remaining > 0 and is_running:
-                        add_log(f"⏳ Waiting {int(remaining//60)}m for next hour batch...", "info")
-                        await asyncio.sleep(remaining)
-                else:
-                    await asyncio.sleep(10)
+                    await asyncio.sleep(1)
 
         except Exception as e:
             add_log(f"🔥 Loop error: {e}. Retrying in 30s...", "error")
