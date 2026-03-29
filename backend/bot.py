@@ -22,6 +22,10 @@ is_running = False
 is_joining = False
 logs = []
 
+# Detailed stats per cycle
+forward_stats = {"success": 0, "skipped": 0, "failed": 0, "total": 0}
+
+
 # ─────────────────────────────────────────────
 # LOGGING
 # ─────────────────────────────────────────────
@@ -239,7 +243,25 @@ async def logout_sender(phone):
 # ─────────────────────────────────────────────
 # FORWARDING
 # ─────────────────────────────────────────────
+async def get_sender_joined_ids():
+    """Return a set of dialog IDs the sender has joined."""
+    try:
+        snd = await get_sender_client()
+        joined = set()
+        async for dialog in snd.iter_dialogs():
+            if dialog.is_group or dialog.is_channel:
+                joined.add(dialog.id)
+                # Also add username variant
+                u = getattr(dialog.entity, 'username', None)
+                if u:
+                    joined.add(f"@{u.lower()}")
+        return joined
+    except Exception as e:
+        add_log(f"⚠️ Could not fetch joined groups: {e}", "warn")
+        return set()
+
 async def forward_message_to_group(channel_username, msg_id, group):
+    global forward_stats
     try:
         snd = await get_sender_client()
         # Convert numeric string IDs to int for proper Telethon resolution
@@ -253,30 +275,58 @@ async def forward_message_to_group(channel_username, msg_id, group):
             if conf:
                 conf.total_sent_count = (conf.total_sent_count or 0) + 1
                 db.commit()
-        add_log(f"✓ Forwarded to {group}", "success")
+        forward_stats["success"] += 1
+        add_log(f"✅ [{forward_stats['success']}/{forward_stats['total']}] Forwarded → {group}", "success")
         return True
     except ChatWriteForbiddenError:
+        forward_stats["failed"] += 1
         add_log(f"🚫 No write permission: {group}", "error")
         return False
     except Exception as e:
         err = str(e)
         if "Cannot find any entity" in err or "Could not find the input entity" in err:
-            add_log(f"⚠️ Skipping {group} — sender not joined or group unavailable", "warn")
+            forward_stats["skipped"] += 1
+            add_log(f"⚠️ Skipped {group} — not joined yet", "warn")
         else:
-            add_log(f"✗ Error forwarding to {group}: {err}", "error")
+            forward_stats["failed"] += 1
+            add_log(f"❌ Failed → {group}: {err}", "error")
         return False
 
 async def hourly_forward_loop(channel_username, msg_id, groups, hourly_count, delay_min, delay_max):
-    global is_running
+    global is_running, forward_stats
+    cycle_num = 0
     while is_running:
         try:
-            queue = groups.copy()
-            if not queue:
-                add_log("📋 No groups! Waiting 60s...", "warn")
+            cycle_num += 1
+            # ── Smart Filter: only send to groups sender has JOINED ──
+            add_log(f"🔍 Checking joined groups (Cycle #{cycle_num})...", "info")
+            joined_ids = await get_sender_joined_ids()
+            
+            all_groups = groups.copy()
+            joined_groups = []
+            not_joined = []
+            for g in all_groups:
+                # Check by username or numeric ID
+                g_key = g.lower() if isinstance(g, str) and g.startswith('@') else g
+                num_id = int(g) if isinstance(g, str) and g.lstrip('-').isdigit() else None
+                if g_key in joined_ids or (num_id and num_id in joined_ids):
+                    joined_groups.append(g)
+                else:
+                    not_joined.append(g)
+
+            add_log(f"📊 Cycle #{cycle_num}: {len(joined_groups)} joined | {len(not_joined)} not joined (skipping)", "info")
+            if not_joined:
+                add_log(f"⏭️ Not joined: {', '.join(str(g) for g in not_joined[:5])}{'...' if len(not_joined)>5 else ''}", "warn")
+
+            if not joined_groups:
+                add_log("📋 No joined groups to forward to! Waiting 60s...", "warn")
                 await asyncio.sleep(60)
                 continue
 
-            add_log(f"🔄 New cycle: {len(queue)} groups.", "info")
+            # Reset stats for this cycle
+            forward_stats = {"success": 0, "skipped": 0, "failed": 0, "total": len(joined_groups)}
+            queue = joined_groups.copy()
+
             while is_running and queue:
                 batch = min(hourly_count, len(queue))
                 if batch > 0:
@@ -287,7 +337,9 @@ async def hourly_forward_loop(channel_username, msg_id, groups, hourly_count, de
                             break
                         wait = send_at - (time.time() - start)
                         if wait > 0:
-                            add_log(f"⏳ Next in {int(wait)}s...", "info")
+                            mins = int(wait)//60
+                            secs = int(wait)%60
+                            add_log(f"⏳ Next forward in {mins}m {secs}s...", "info")
                             await asyncio.sleep(wait)
                         if not is_running or not queue:
                             break
@@ -295,13 +347,19 @@ async def hourly_forward_loop(channel_username, msg_id, groups, hourly_count, de
                         await forward_message_to_group(channel_username, msg_id, group)
 
                     if not queue:
-                        add_log("✨ Cycle done! Restarting in 60s.", "success")
+                        s = forward_stats
+                        add_log(
+                            f"🎉 Cycle #{cycle_num} done! "
+                            f"✅ {s['success']} sent | ❌ {s['failed']} failed | ⚠️ {s['skipped']} skipped "
+                            f"| Total: {s['total']} groups. Restarting in 60s.",
+                            "success"
+                        )
                         await asyncio.sleep(60)
                         break
 
                     remaining = 3600 - (time.time() - start)
                     if remaining > 0 and is_running:
-                        add_log(f"⏳ Waiting {int(remaining)}s for next hour...", "info")
+                        add_log(f"⏳ Waiting {int(remaining//60)}m for next hour batch...", "info")
                         await asyncio.sleep(remaining)
                 else:
                     await asyncio.sleep(10)
