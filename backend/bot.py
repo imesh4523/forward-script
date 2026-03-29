@@ -292,7 +292,7 @@ async def forward_message_to_group(channel_username, msg_id, group):
             add_log(f"❌ Failed → {group}: {err}", "error")
         return False
 
-async def hourly_forward_loop(channel_username, msg_id, groups, hourly_count, delay_min, delay_max):
+async def hourly_forward_loop(channel_username, msg_id, groups):
     global is_running, forward_stats
     cycle_num = 0
     cycle_rest_minutes = 5 # Default rest between full cycles
@@ -300,9 +300,16 @@ async def hourly_forward_loop(channel_username, msg_id, groups, hourly_count, de
     while is_running:
         try:
             cycle_num += 1
-            add_log(f"🚀 Starting Full Burst Cycle #{cycle_num}...", "info")
+            # RE-READ CONFIG FROM DB EVERY CYCLE
+            with SessionLocal() as db:
+                fwd = db.query(ForwardingConfig).first()
+                d_min = fwd.delay_min if fwd else 1
+                d_max = fwd.delay_max if fwd else 5
+                # You can also use hourly_count if you want, but user wants BURST now
+                
+            add_log(f"🚀 Starting Full Burst Cycle #{cycle_num}... (Delays: {d_min}-{d_max}s)", "info")
             
-            # ── Smart Filter: only send to groups sender has JOINED ──
+            # ── Smart Filter ──
             joined_ids = await get_sender_joined_ids()
             
             all_groups = groups.copy()
@@ -326,29 +333,28 @@ async def hourly_forward_loop(channel_username, msg_id, groups, hourly_count, de
             for group in joined_groups:
                 if not is_running:
                     break
-                    
-                # Forward to current group
+                
+                # Fetch fresh delays in case user changed them during the cycle
+                with SessionLocal() as db:
+                    fwd = db.query(ForwardingConfig).first()
+                    cur_min = fwd.delay_min if fwd else d_min
+                    cur_max = fwd.delay_max if fwd else d_max
+
+                # Forward
                 await forward_message_to_group(channel_username, msg_id, group)
                 
-                # Small delay between groups to avoid instant ban but essentially "burst"
-                wait = random.uniform(delay_min, delay_max)
+                wait = random.uniform(cur_min, cur_max)
                 if wait > 0 and is_running:
-                    # If user set huge delays, we still obey them, but usually they'll set 1-5s for burst
                     await asyncio.sleep(wait)
 
             if is_running:
                 s = forward_stats
                 add_log(
-                    f"🎉 Cycle #{cycle_num} Complete! "
-                    f"✅ {s['success']} sent | ❌ {s['failed']} failed | 📊 Total: {s['total']} "
-                    f"Next full cycle in {cycle_rest_minutes} minutes.",
+                    f"🎉 Cycle #{cycle_num} Complete! ✅ {s['success']} sent. Next in {cycle_rest_minutes}m.",
                     "success"
                 )
-                # Wait for next cycle (5 mins as requested)
-                # We use seconds for asyncio.sleep
                 for _ in range(cycle_rest_minutes * 60):
-                    if not is_running:
-                        break
+                    if not is_running: break
                     await asyncio.sleep(1)
 
         except Exception as e:
@@ -391,7 +397,7 @@ async def start_forwarding(src_id, src_hash, src_ph, snd_id, snd_hash, snd_ph,
             if fwd_conf:
                 fwd_conf.is_bot_running = True
                 db.commit()
-        asyncio.create_task(hourly_forward_loop(channel_username, msg_id, groups, h_count, d_min, d_max))
+        asyncio.create_task(hourly_forward_loop(channel_username, msg_id, groups))
 
     except Exception as e:
         add_log(f"❌ Bot startup failed: {e}", "error")
@@ -405,47 +411,51 @@ async def stop_forwarding():
 # GROUP AUTO-DETECT & AUTO-JOIN
 # ─────────────────────────────────────────────
 async def auto_detect_from_source(src_id, src_hash, src_ph, snd_id, snd_hash, snd_ph):
-    src = await get_source_client()
-    snd = await get_sender_client()
-    if not src or not snd:
-        return {"success": False, "error": "Clients not available"}
-    if not await src.is_user_authorized() or not await snd.is_user_authorized():
-        return {"success": False, "error": "Auth failed"}
+    try:
+        src = await get_source_client()
+        snd = await get_sender_client()
+        if not src or not snd:
+            return {"success": False, "error": "Clients not available"}
+        if not await src.is_user_authorized() or not await snd.is_user_authorized():
+            return {"success": False, "error": "Auth failed"}
 
-    add_log("🔍 Detecting groups from Source...", "info")
-    source_groups = []
-    async for d in src.iter_dialogs():
-        is_sendable = False
-        if d.is_group:
-            is_sendable = True
-        elif d.is_channel:
-            # For channels, only include if it's a megagroup (supergroup) or user is admin
-            entity = d.entity
-            if getattr(entity, 'megagroup', False):
+        add_log("🔍 Detecting groups from Source...", "info")
+        source_groups = []
+        async for d in src.iter_dialogs(limit=500): # Hard limit to avoid huge floods
+            if not d.entity: continue
+            
+            is_sendable = False
+            if d.is_group:
                 is_sendable = True
-            elif getattr(entity, 'creator', False) or (getattr(entity, 'admin_rights', None)):
-                # If it's a broadcast but user is admin/creator, they can send
-                is_sendable = True
-        
-        if is_sendable:
-            username = getattr(d.entity, 'username', None)
-            ident = f"@{username}" if username else str(d.id)
-            source_groups.append({"group_id_or_username": ident, "group_title": d.title, "id": d.id})
+            elif d.is_channel:
+                entity = d.entity
+                if getattr(entity, 'megagroup', False):
+                    is_sendable = True
+                elif getattr(entity, 'creator', False) or (getattr(entity, 'admin_rights', None)):
+                    is_sendable = True
+            
+            if is_sendable:
+                username = getattr(d.entity, 'username', None)
+                ident = f"@{username}" if username else str(d.id)
+                source_groups.append({"group_id_or_username": ident, "group_title": d.title, "id": d.id})
 
-    sender_joined = set()
-    async for d in snd.iter_dialogs():
-        sender_joined.add(d.id)
+        sender_joined = set()
+        async for d in snd.iter_dialogs(limit=500):
+            sender_joined.add(d.id)
 
-    final = [
-        {
-            "group_id_or_username": g["group_id_or_username"],
-            "group_title": g["group_title"],
-            "is_sender_joined": g["id"] in sender_joined
-        }
-        for g in source_groups
-    ]
-    add_log(f"✅ Found {len(final)} sendable groups.", "success")
-    return {"success": True, "groups": final}
+        final = [
+            {
+                "group_id_or_username": g["group_id_or_username"],
+                "group_title": g["group_title"],
+                "is_sender_joined": g["id"] in sender_joined
+            }
+            for g in source_groups
+        ]
+        add_log(f"✅ Found {len(final)} sendable groups.", "success")
+        return {"success": True, "groups": final}
+    except Exception as e:
+        add_log(f"❌ Auto-Detect Crash: {e}", "error")
+        return {"success": False, "error": str(e)}
 
 async def auto_join_group(link):
     snd = await get_sender_client()
