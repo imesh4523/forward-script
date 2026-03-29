@@ -278,6 +278,10 @@ async def forward_message_to_group(channel_username, msg_id, group):
         forward_stats["success"] += 1
         add_log(f"✅ [{forward_stats['success']}/{forward_stats['total']}] Forwarded → {group}", "success")
         return True
+    except FloodWaitError as e:
+        add_log(f"⏳ Flood limit hit! Waiting {e.seconds}s before next attempt...", "warn")
+        await asyncio.sleep(e.seconds)
+        return False
     except ChatWriteForbiddenError:
         forward_stats["failed"] += 1
         add_log(f"🚫 No write permission: {group}", "error")
@@ -295,23 +299,19 @@ async def forward_message_to_group(channel_username, msg_id, group):
 async def hourly_forward_loop(channel_username, msg_id, groups):
     global is_running, forward_stats
     cycle_num = 0
-    cycle_rest_minutes = 5 # Default rest between full cycles
+    cycle_rest_minutes = 5
     
     while is_running:
         try:
             cycle_num += 1
-            # RE-READ CONFIG FROM DB EVERY CYCLE
             with SessionLocal() as db:
                 fwd = db.query(ForwardingConfig).first()
-                d_min = fwd.delay_min if fwd else 1
-                d_max = fwd.delay_max if fwd else 5
-                # You can also use hourly_count if you want, but user wants BURST now
+                # We still read delays in case we want a staggered burst, 
+                # but user wants "at once", so we will use gather.
                 
-            add_log(f"🚀 Starting Full Burst Cycle #{cycle_num}... (Delays: {d_min}-{d_max}s)", "info")
+            add_log(f"🚀 Starting PARALLEL Burst Cycle #{cycle_num}...", "info")
             
-            # ── Smart Filter ──
             joined_ids = await get_sender_joined_ids()
-            
             all_groups = groups.copy()
             joined_groups = []
             for g in all_groups:
@@ -325,32 +325,20 @@ async def hourly_forward_loop(channel_username, msg_id, groups):
                 await asyncio.sleep(60)
                 continue
 
-            add_log(f"📊 Cycle #{cycle_num}: Forwarding to ALL {len(joined_groups)} joined groups at once...", "success")
+            add_log(f"📊 Cycle #{cycle_num}: Blasting to {len(joined_groups)} groups IN PARALLEL...", "success")
             
             # Reset stats for this cycle
             forward_stats = {"success": 0, "skipped": 0, "failed": 0, "total": len(joined_groups)}
             
-            for group in joined_groups:
-                if not is_running:
-                    break
-                
-                # Fetch fresh delays in case user changed them during the cycle
-                with SessionLocal() as db:
-                    fwd = db.query(ForwardingConfig).first()
-                    cur_min = fwd.delay_min if fwd else d_min
-                    cur_max = fwd.delay_max if fwd else d_max
-
-                # Forward
-                await forward_message_to_group(channel_username, msg_id, group)
-                
-                wait = random.uniform(cur_min, cur_max)
-                if wait > 0 and is_running:
-                    await asyncio.sleep(wait)
+            # ── Parallel Execution ──
+            # Create tasks for ALL groups to run at once
+            tasks = [forward_message_to_group(channel_username, msg_id, group) for group in joined_groups]
+            await asyncio.gather(*tasks)
 
             if is_running:
                 s = forward_stats
                 add_log(
-                    f"🎉 Cycle #{cycle_num} Complete! ✅ {s['success']} sent. Next in {cycle_rest_minutes}m.",
+                    f"🎉 Parallel Cycle #{cycle_num} Complete! ✅ {s['success']} sent. Rests for {cycle_rest_minutes}m.",
                     "success"
                 )
                 for _ in range(cycle_rest_minutes * 60):
@@ -358,7 +346,7 @@ async def hourly_forward_loop(channel_username, msg_id, groups):
                     await asyncio.sleep(1)
 
         except Exception as e:
-            add_log(f"🔥 Loop error: {e}. Retrying in 30s...", "error")
+            add_log(f"🔥 Parallel Loop error: {e}. Retrying in 30s...", "error")
             await asyncio.sleep(30)
 
     add_log("🛑 Forwarding stopped.", "warn")
