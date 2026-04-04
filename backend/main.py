@@ -377,6 +377,7 @@ def get_forwarding_config():
             "delay_max": config.delay_max, 
             "hourly_count": config.hourly_count, 
             "join_delay_minutes": config.join_delay_minutes,
+            "cycle_rest_minutes": config.cycle_rest_minutes or 3,
             "total_sent_count": config.total_sent_count or 0,
             "is_bot_running": config.is_bot_running or False
         }

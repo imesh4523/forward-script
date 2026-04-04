@@ -298,7 +298,13 @@ async def auto_detect_from_source(src_id, src_hash, src_ph, snd_id, snd_hash, sn
             final.append({"group_id_or_username": g["user"], "group_title": g["title"], "is_sender_joined": g["id"] in sender_joined})
         add_log(f"✅ Found {len(final)} groups.", "success")
         return {"success": True, "groups": final}
-    except Exception as e: return {"success": False, "error": str(e)}
+async def batch_join_groups(links, delay_minutes):
+    add_log(f"🚀 Starting batch join for {len(links)} groups (Delay: {delay_minutes}m)...", "info")
+    for link in links:
+        await auto_join_group(link)
+        add_log(f"💤 Waiting {delay_minutes} minutes before next join...", "info")
+        await asyncio.sleep(delay_minutes * 60)
+    add_log("✅ Batch join complete.", "success")
 
 async def auto_join_group(link):
     snd = await get_sender_client()
