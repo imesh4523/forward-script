@@ -115,36 +115,51 @@ except Exception as e:
 def run_migrations():
     print("INFO: Checking for database migrations...")
     try:
-        with SessionLocal() as session:
-            # Check if cycle_rest_minutes exists in forwarding_config
+        with engine.connect() as conn:
+            # 1. Add cycle_rest_minutes
             try:
-                session.execute(text("SELECT cycle_rest_minutes FROM forwarding_config LIMIT 1"))
+                conn.execute(text("SELECT cycle_rest_minutes FROM forwarding_config LIMIT 1"))
             except Exception:
-                print("INFO: Migrating: Adding cycle_rest_minutes to forwarding_config")
-                session.rollback()
-                session.execute(text("ALTER TABLE forwarding_config ADD COLUMN cycle_rest_minutes INTEGER DEFAULT 3"))
-                session.commit()
-
-            # Ensure total_sent_count and is_bot_running also exist
-            for col, col_type in [("total_sent_count", "INTEGER DEFAULT 0"), ("is_bot_running", "BOOLEAN DEFAULT FALSE")]:
                 try:
-                    session.execute(text(f"SELECT {col} FROM forwarding_config LIMIT 1"))
-                except Exception:
-                    session.rollback()
-                    session.execute(text(f"ALTER TABLE forwarding_config ADD COLUMN {col} {col_type}"))
-                    session.commit()
+                    print("INFO: Migrating: Adding cycle_rest_minutes...")
+                    conn.execute(text("ALTER TABLE forwarding_config ADD COLUMN cycle_rest_minutes INTEGER DEFAULT 3"))
+                    conn.commit()
+                except Exception as e:
+                    print(f"DEBUG: Migration cycle_rest_minutes failed: {e}")
 
-            # Session strings for accounts
+            # 2. Add total_sent_count
+            try:
+                conn.execute(text("SELECT total_sent_count FROM forwarding_config LIMIT 1"))
+            except Exception:
+                try:
+                    conn.execute(text("ALTER TABLE forwarding_config ADD COLUMN total_sent_count INTEGER DEFAULT 0"))
+                    conn.commit()
+                except Exception as e:
+                    print(f"DEBUG: Migration total_sent_count failed: {e}")
+
+            # 3. Add is_bot_running
+            try:
+                conn.execute(text("SELECT is_bot_running FROM forwarding_config LIMIT 1"))
+            except Exception:
+                try:
+                    conn.execute(text("ALTER TABLE forwarding_config ADD COLUMN is_bot_running BOOLEAN DEFAULT FALSE"))
+                    conn.commit()
+                except Exception as e:
+                    print(f"DEBUG: Migration is_bot_running failed: {e}")
+
+            # 4. Session strings for accounts
             for table in ["telegram_config", "sender_config"]:
                 try:
-                    session.execute(text(f"SELECT session_string FROM {table} LIMIT 1"))
+                    conn.execute(text(f"SELECT session_string FROM {table} LIMIT 1"))
                 except Exception:
-                    session.rollback()
-                    session.execute(text(f"ALTER TABLE {table} ADD COLUMN session_string TEXT"))
-                    session.commit()
-            
-            print("INFO: Database migrations completed (or already up to date).")
+                    try:
+                        conn.execute(text(f"ALTER TABLE {table} ADD COLUMN session_string TEXT"))
+                        conn.commit()
+                    except Exception as e:
+                        print(f"DEBUG: Migration session_string for {table} failed: {e}")
+
+        print("INFO: Database migration check finished.")
     except Exception as e:
-        print(f"ERROR: Migration failed: {e}")
+        print(f"ERROR: Global migration failed: {e}")
 
 run_migrations()
