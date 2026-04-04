@@ -25,6 +25,8 @@ logs = []
 # Detailed stats per cycle
 forward_stats = {"success": 0, "skipped": 0, "failed": 0, "total": 0}
 
+# Per-group next allowed time (epoch seconds) to handle FloodWait smartly
+group_next_allowed = {}
 
 # ─────────────────────────────────────────────
 # LOGGING
@@ -146,15 +148,23 @@ async def get_sender_joined_ids():
         return set()
 
 async def forward_message_to_group(channel_username, msg_id, group):
-    global is_running, forward_stats
+    global is_running, forward_stats, group_next_allowed
+    
+    # Check if group is currently in FloodWait timeout
+    now = time.time()
+    if group in group_next_allowed:
+        wait_left = group_next_allowed[group] - now
+        if wait_left > 0:
+            add_log(f"⏳ Still waiting for {group}: {int(wait_left)}s left.", "warn")
+            forward_stats["skipped"] += 1
+            return False
+
     try:
         snd = await get_sender_client()
         target = int(group) if isinstance(group, str) and group.lstrip('-').isdigit() else group
         
-        # Execute forward
         await snd.forward_messages(target, msg_id, from_peer=channel_username)
         
-        # Success persistence
         with SessionLocal() as db:
             conf = db.query(ForwardingConfig).first()
             if conf:
@@ -166,9 +176,9 @@ async def forward_message_to_group(channel_username, msg_id, group):
         return True
 
     except FloodWaitError as e:
-        # DO NOT SLEEP-BLOCK HERE! Skip for this cycle, try next cycle.
-        # This keeps the bot alive for other groups.
-        add_log(f"⏳ Flood limit (@{group}): {e.seconds}s remaining. Skipping for now...", "warn")
+        # Smart handling: Record the time this group can be retried
+        group_next_allowed[group] = time.time() + e.seconds
+        add_log(f"⏳ Flood limit (@{group}): {e.seconds}s penalty. Skipping this cycle...", "warn")
         forward_stats["skipped"] += 1
         return False
         
@@ -190,7 +200,7 @@ async def forward_message_to_group(channel_username, msg_id, group):
 async def hourly_forward_loop(channel_username, msg_id, groups):
     global is_running, forward_stats
     cycle_num = 0
-    cycle_rest_minutes = 5
+    cycle_rest_minutes = 3 # Optimized to 3 minutes as requested
     
     while is_running:
         try:
@@ -208,13 +218,11 @@ async def hourly_forward_loop(channel_username, msg_id, groups):
             add_log(f"📊 Sending to {len(joined_groups)} joined groups at once...", "success")
             forward_stats = {"success": 0, "skipped": 0, "failed": 0, "total": len(joined_groups)}
             
-            # Start all tasks for this burst cycle
             tasks = [forward_message_to_group(channel_username, msg_id, group) for group in joined_groups]
             await asyncio.gather(*tasks)
 
             if is_running:
                 add_log(f"🎉 Cycle #{cycle_num} Complete! ✅ {forward_stats['success']} sent. Next in {cycle_rest_minutes}m.", "success")
-                # Wait for next cycle (5 mins) — this is the ONLY sleep that should happen
                 for _ in range(cycle_rest_minutes * 60):
                     if not is_running: break
                     await asyncio.sleep(1)
@@ -238,7 +246,7 @@ async def start_forwarding(src_id, src_hash, src_ph, snd_id, snd_hash, snd_ph, p
         if not src or not await src.is_user_authorized() or not snd or not await snd.is_user_authorized():
             raise Exception("Auth failed!")
 
-        add_log(f"🤖 Bot launched! Cycle every 5m.", "success")
+        add_log(f"🤖 Bot launched! Fast Cycle every {3}m.", "success")
         with SessionLocal() as db:
             fwd = db.query(ForwardingConfig).first()
             if fwd: fwd.is_bot_running = True; db.commit()
