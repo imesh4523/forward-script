@@ -668,6 +668,7 @@ if os.path.exists(dist_path):
 @app.get("/api/debug/db")
 def debug_db():
     from database import engine  # Direct import to avoid name error
+    from sqlalchemy import text # Import text correctly
     results = {}
     try:
         with engine.connect() as conn:
