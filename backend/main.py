@@ -665,6 +665,17 @@ if os.path.exists(dist_path):
 # ============================================
 # EMERGENCY DEBUG
 # ============================================
+@app.get("/api/debug/migrate")
+def debug_migrate():
+    from database import engine
+    from sqlalchemy import text
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE forwarding_config ADD COLUMN cycle_rest_minutes INTEGER DEFAULT 3"))
+        return {"status": "success"}
+    except Exception as e:
+        return {"error": str(e)}
+
 @app.get("/api/debug/db")
 def debug_db():
     from database import engine  # Direct import to avoid name error
