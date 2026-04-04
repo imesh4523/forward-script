@@ -667,14 +667,16 @@ if os.path.exists(dist_path):
 # ============================================
 @app.get("/api/debug/db")
 def debug_db():
+    from .database import engine  # Direct import to avoid name error
     results = {}
     try:
         with engine.connect() as conn:
             for table in ["telegram_config", "sender_config", "target_groups", "forwarding_config"]:
                 try:
-                    # Use a plain string because text() is already imported
                     res = conn.execute(text(f"SELECT * FROM {table} LIMIT 1"))
-                    results[table] = {"exists": True, "columns": list(res.keys())}
+                    # Fetch keys properly
+                    cols = list(res.keys())
+                    results[table] = {"exists": True, "columns": cols}
                 except Exception as e:
                     results[table] = {"exists": False, "error": str(e)}
         return results
