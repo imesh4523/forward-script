@@ -402,9 +402,8 @@ def update_forwarding_config(data: ForwardConfigRequest):
                 config.post_link = data.post_link
                 config.delay_min = data.delay_min
                 config.delay_max = data.delay_max
-                config.hourly_count = data.hourly_count
+                config.hourly_count = data.cycle_rest_minutes or 3 # Use hourly_count to store cycle_rest_minutes
                 config.join_delay_minutes = data.join_delay_minutes
-                config.cycle_rest_minutes = data.cycle_rest_minutes or 3
                 # Only update count if explicitly sent as non-zero or it's currently null
                 if data.total_sent_count is not None:
                     config.total_sent_count = data.total_sent_count
