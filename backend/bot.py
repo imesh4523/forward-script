@@ -255,7 +255,6 @@ async def hourly_forward_loop(channel_username, msg_id, groups):
 
 async def start_forwarding(src_id, src_hash, src_ph, snd_id, snd_hash, snd_ph, post_link, groups, d_min, d_max, h_count):
     global is_running
-    print(f"DEBUG: Starting bot with post_link: {post_link}")
     is_running = True
     try:
         parts = post_link.strip().rstrip('/').split('/')
@@ -263,11 +262,8 @@ async def start_forwarding(src_id, src_hash, src_ph, snd_id, snd_hash, snd_ph, p
         channel_username = int("-100" + parts[-2]) if len(parts) >= 4 and parts[-3] == 'c' else parts[-2]
 
         add_log("🔄 Verifying accounts...", "info")
-        print("DEBUG: Fetching clients...")
         src, snd = await get_source_client(), await get_sender_client()
-        print(f"DEBUG: Clients fetched. src: {bool(src)}, snd: {bool(snd)}")
         if not src or not await src.is_user_authorized() or not snd or not await snd.is_user_authorized():
-            print("DEBUG: Auth failed check")
             raise Exception("Auth failed!")
 
         add_log(f"🤖 Bot launched! Fast Cycle every {3}m.", "success")

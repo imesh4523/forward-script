@@ -461,47 +461,39 @@ def get_bot_status():
 @app.post("/api/bot/start")
 async def start_bot():
     global _bot_task
-    print("DEBUG: /api/bot/start called")
-    try:
-        # Prevent double-start
-        if _bot_task and not _bot_task.done():
-            return {"status": "already_running", "message": "Bot is already running"}
+    # Prevent double-start
+    if _bot_task and not _bot_task.done():
+        return {"status": "already_running", "message": "Bot is already running"}
 
-        with get_db() as db:
-            source_config = db.query(TelegramConfig).first()
-            sender_config = db.query(SenderConfig).first()
-            fwd = db.query(ForwardingConfig).first()
-            groups = db.query(TargetGroup).filter(TargetGroup.is_selected == True).all()
+    with get_db() as db:
+        source_config = db.query(TelegramConfig).first()
+        sender_config = db.query(SenderConfig).first()
+        fwd = db.query(ForwardingConfig).first()
+        groups = db.query(TargetGroup).filter(TargetGroup.is_selected == True).all()
 
-            if not source_config or not source_config.is_authenticated:
-                raise HTTPException(status_code=400, detail="Please authenticate Source account first")
-            if not sender_config or not sender_config.is_authenticated:
-                raise HTTPException(status_code=400, detail="Please authenticate Sender account first")
-            if not fwd or not fwd.post_link:
-                raise HTTPException(status_code=400, detail="Please set a Post Link first")
-            if not groups:
-                raise HTTPException(status_code=400, detail="Please add and select at least one target group")
+        if not source_config or not source_config.is_authenticated:
+            raise HTTPException(status_code=400, detail="Please authenticate Source account first")
+        if not sender_config or not sender_config.is_authenticated:
+            raise HTTPException(status_code=400, detail="Please authenticate Sender account first")
+        if not fwd or not fwd.post_link:
+            raise HTTPException(status_code=400, detail="Please set a Post Link first")
+        if not groups:
+            raise HTTPException(status_code=400, detail="Please add and select at least one target group")
 
-            group_list = [g.group_id_or_username for g in groups]
-            src_api_id, src_api_hash, src_phone = source_config.api_id, source_config.api_hash, source_config.phone_number
-            snd_api_id, snd_api_hash, snd_phone = sender_config.api_id, sender_config.api_hash, sender_config.phone_number
-            post_link = fwd.post_link
-            d_min, d_max, h_count = fwd.delay_min, fwd.delay_max, fwd.hourly_count
-            
-            # Mark as running in DB
-            fwd.is_bot_running = True
-            db.commit()
+        group_list = [g.group_id_or_username for g in groups]
+        src_api_id, src_api_hash, src_phone = source_config.api_id, source_config.api_hash, source_config.phone_number
+        snd_api_id, snd_api_hash, snd_phone = sender_config.api_id, sender_config.api_hash, sender_config.phone_number
+        post_link = fwd.post_link
+        d_min, d_max, h_count = fwd.delay_min, fwd.delay_max, fwd.hourly_count
+        
+        # Mark as running in DB
+        fwd.is_bot_running = True
+        db.commit()
 
-        print(f"DEBUG: Spawning bot task for {len(group_list)} groups")
-        _bot_task = asyncio.create_task(
-            bot.start_forwarding(src_api_id, src_api_hash, src_phone, snd_api_id, snd_api_hash, snd_phone, post_link, group_list, d_min, d_max, h_count)
-        )
-        return {"status": "started"}
-    except Exception as e:
-        print(f"DEBUG: start_bot error: {e}")
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+    _bot_task = asyncio.create_task(
+        bot.start_forwarding(src_api_id, src_api_hash, src_phone, snd_api_id, snd_api_hash, snd_phone, post_link, group_list, d_min, d_max, h_count)
+    )
+    return {"status": "started"}
 
 @app.post("/api/bot/stop")
 async def stop_bot():
