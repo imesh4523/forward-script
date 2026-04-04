@@ -111,67 +111,32 @@ try:
 except Exception as e:
     print(f"ERROR: Could not create tables: {e}")
 
-# Migration Helper: Add columns if missing
+# Migration Helper: Add columns if missing safely
 def run_migrations():
     print("INFO: Checking for database migrations...")
+    from sqlalchemy import inspect
     try:
-        with engine.connect() as conn:
-            # 1. Add cycle_rest_minutes
-            try:
-                conn.execute(text("SELECT cycle_rest_minutes FROM forwarding_config LIMIT 1"))
-            except Exception:
-                conn.rollback()  # Clear aborted transaction state in pgsql
-                try:
-                    print("INFO: Migrating: Adding cycle_rest_minutes...")
-                    conn.execute(text("ALTER TABLE forwarding_config ADD COLUMN cycle_rest_minutes INTEGER DEFAULT 3"))
-                    conn.commit()
-                except Exception as e:
-                    print(f"DEBUG: Migration cycle_rest_minutes failed: {e}")
+        inspector = inspect(engine)
+        
+        # Helper to add column if it doesn't exist
+        def add_column_if_not_exists(table_name, column_name, col_type_and_default):
+            columns = [col['name'] for col in inspector.get_columns(table_name)]
+            if column_name not in columns:
+                with engine.begin() as conn:
+                    print(f"INFO: Migrating: Adding {column_name} to {table_name}...")
+                    conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {col_type_and_default}"))
 
-            # 2. Add total_sent_count
-            try:
-                conn.execute(text("SELECT total_sent_count FROM forwarding_config LIMIT 1"))
-            except Exception:
-                conn.rollback()
-                try:
-                    conn.execute(text("ALTER TABLE forwarding_config ADD COLUMN total_sent_count INTEGER DEFAULT 0"))
-                    conn.commit()
-                except Exception as e:
-                    print(f"DEBUG: Migration total_sent_count failed: {e}")
-
-            # 3. Add is_bot_running
-            try:
-                conn.execute(text("SELECT is_bot_running FROM forwarding_config LIMIT 1"))
-            except Exception:
-                conn.rollback()
-                try:
-                    conn.execute(text("ALTER TABLE forwarding_config ADD COLUMN is_bot_running BOOLEAN DEFAULT FALSE"))
-                    conn.commit()
-                except Exception as e:
-                    print(f"DEBUG: Migration is_bot_running failed: {e}")
-
-            # 4. Session strings for accounts
-            for table in ["telegram_config", "sender_config"]:
-                try:
-                    conn.execute(text(f"SELECT session_string FROM {table} LIMIT 1"))
-                except Exception:
-                    conn.rollback()
-                    try:
-                        conn.execute(text(f"ALTER TABLE {table} ADD COLUMN session_string TEXT"))
-                        conn.commit()
-                    except Exception as e:
-                        print(f"DEBUG: Migration session_string for {table} failed: {e}")
-
-            # 5. Add is_sender_joined
-            try:
-                conn.execute(text("SELECT is_sender_joined FROM target_groups LIMIT 1"))
-            except Exception:
-                conn.rollback()
-                try:
-                    conn.execute(text("ALTER TABLE target_groups ADD COLUMN is_sender_joined BOOLEAN DEFAULT FALSE"))
-                    conn.commit()
-                except Exception as e:
-                    print(f"DEBUG: Migration is_sender_joined failed: {e}")
+        # 1. Add cycle_rest_minutes
+        add_column_if_not_exists("forwarding_config", "cycle_rest_minutes", "INTEGER DEFAULT 3")
+        # 2. Add total_sent_count
+        add_column_if_not_exists("forwarding_config", "total_sent_count", "INTEGER DEFAULT 0")
+        # 3. Add is_bot_running
+        add_column_if_not_exists("forwarding_config", "is_bot_running", "BOOLEAN DEFAULT FALSE")
+        # 4. Add is_sender_joined
+        add_column_if_not_exists("target_groups", "is_sender_joined", "BOOLEAN DEFAULT FALSE")
+        # 5. Session strings for accounts
+        for table in ["telegram_config", "sender_config"]:
+            add_column_if_not_exists(table, "session_string", "TEXT")
 
         print("INFO: Database migration check finished.")
     except Exception as e:
