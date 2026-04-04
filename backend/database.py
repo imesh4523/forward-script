@@ -120,6 +120,7 @@ def run_migrations():
             try:
                 conn.execute(text("SELECT cycle_rest_minutes FROM forwarding_config LIMIT 1"))
             except Exception:
+                conn.rollback()  # Clear aborted transaction state in pgsql
                 try:
                     print("INFO: Migrating: Adding cycle_rest_minutes...")
                     conn.execute(text("ALTER TABLE forwarding_config ADD COLUMN cycle_rest_minutes INTEGER DEFAULT 3"))
@@ -131,6 +132,7 @@ def run_migrations():
             try:
                 conn.execute(text("SELECT total_sent_count FROM forwarding_config LIMIT 1"))
             except Exception:
+                conn.rollback()
                 try:
                     conn.execute(text("ALTER TABLE forwarding_config ADD COLUMN total_sent_count INTEGER DEFAULT 0"))
                     conn.commit()
@@ -141,6 +143,7 @@ def run_migrations():
             try:
                 conn.execute(text("SELECT is_bot_running FROM forwarding_config LIMIT 1"))
             except Exception:
+                conn.rollback()
                 try:
                     conn.execute(text("ALTER TABLE forwarding_config ADD COLUMN is_bot_running BOOLEAN DEFAULT FALSE"))
                     conn.commit()
@@ -152,6 +155,7 @@ def run_migrations():
                 try:
                     conn.execute(text(f"SELECT session_string FROM {table} LIMIT 1"))
                 except Exception:
+                    conn.rollback()
                     try:
                         conn.execute(text(f"ALTER TABLE {table} ADD COLUMN session_string TEXT"))
                         conn.commit()
