@@ -162,6 +162,17 @@ def run_migrations():
                     except Exception as e:
                         print(f"DEBUG: Migration session_string for {table} failed: {e}")
 
+            # 5. Add is_sender_joined
+            try:
+                conn.execute(text("SELECT is_sender_joined FROM target_groups LIMIT 1"))
+            except Exception:
+                conn.rollback()
+                try:
+                    conn.execute(text("ALTER TABLE target_groups ADD COLUMN is_sender_joined BOOLEAN DEFAULT FALSE"))
+                    conn.commit()
+                except Exception as e:
+                    print(f"DEBUG: Migration is_sender_joined failed: {e}")
+
         print("INFO: Database migration check finished.")
     except Exception as e:
         print(f"ERROR: Global migration failed: {e}")
