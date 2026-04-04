@@ -428,10 +428,6 @@ function GroupsTab() {
               Save
             </button>
           </div>
-              className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-3 rounded-xl font-medium text-sm transition-all cursor-pointer">
-              Save
-            </button>
-          </div>
         </div>
       </div>
 
