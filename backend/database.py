@@ -85,11 +85,10 @@ class ForwardingConfig(Base):
     post_link = Column(String, default="")
     delay_min = Column(Integer, default=30)
     delay_max = Column(Integer, default=120)
-    hourly_count = Column(Integer, default=3)
+    hourly_count = Column(Integer, default=3) # Reused as cycle_rest_minutes
     join_delay_minutes = Column(Integer, default=60)
     total_sent_count = Column(Integer, default=0)
     is_bot_running = Column(Boolean, default=False)
-    cycle_rest_minutes = Column(Integer, default=3)
 
 # Grant permissions on public schema (required for DigitalOcean Managed PostgreSQL)
 def grant_schema_permissions():
@@ -126,9 +125,7 @@ def run_migrations():
                     print(f"INFO: Migrating: Adding {column_name} to {table_name}...")
                     conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {col_type_and_default}"))
 
-        # 1. Add cycle_rest_minutes
-        add_column_if_not_exists("forwarding_config", "cycle_rest_minutes", "INTEGER DEFAULT 3")
-        # 2. Add total_sent_count
+        # 1. Add total_sent_count
         add_column_if_not_exists("forwarding_config", "total_sent_count", "INTEGER DEFAULT 0")
         # 3. Add is_bot_running
         add_column_if_not_exists("forwarding_config", "is_bot_running", "BOOLEAN DEFAULT FALSE")

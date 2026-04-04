@@ -377,7 +377,7 @@ def get_forwarding_config():
             "delay_max": config.delay_max, 
             "hourly_count": config.hourly_count, 
             "join_delay_minutes": config.join_delay_minutes,
-            "cycle_rest_minutes": config.cycle_rest_minutes or 3,
+            "cycle_rest_minutes": config.hourly_count, # Reused unused hourly_count column for cycle rest
             "total_sent_count": config.total_sent_count or 0,
             "is_bot_running": config.is_bot_running or False
         }
@@ -393,10 +393,9 @@ def update_forwarding_config(data: ForwardConfigRequest):
                     post_link=data.post_link, 
                     delay_min=data.delay_min, 
                     delay_max=data.delay_max, 
-                    hourly_count=data.hourly_count, 
+                    hourly_count=data.cycle_rest_minutes or 3, # Reused unused hourly_count for cycle_rest_minutes
                     join_delay_minutes=data.join_delay_minutes,
-                    total_sent_count=data.total_sent_count or 0,
-                    cycle_rest_minutes=data.cycle_rest_minutes or 3
+                    total_sent_count=data.total_sent_count or 0
                 )
                 db.add(config)
             else:
