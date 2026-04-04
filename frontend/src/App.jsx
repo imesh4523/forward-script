@@ -400,32 +400,21 @@ function GroupsTab() {
       {/* Forwarding Settings */}
       <div className="bg-slate-900/40 rounded-2xl border border-slate-700/50 p-5 space-y-4">
         <h3 className="text-sm font-semibold text-slate-300 flex items-center gap-2"><Clock size={15} /> Forwarding Settings</h3>
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-          <div className="col-span-2 md:col-span-5">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="col-span-1 md:col-span-2">
             <label className="block text-xs font-semibold text-slate-500 mb-1 uppercase tracking-wider">Telegram Post Link</label>
             <input type="text" value={postLink} onChange={e => setPostLink(e.target.value)}
               placeholder="https://t.me/imesh_cloud_official/16" className={inputClass} />
           </div>
           <div>
-            <label className="block text-xs font-semibold text-slate-500 mb-1 uppercase tracking-wider">Min Delay (s)</label>
-            <input type="number" value={delayMin} onChange={e => setDelayMin(Number(e.target.value))} min={5} className={inputClass} />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-slate-500 mb-1 uppercase tracking-wider">Max Delay (s)</label>
-            <input type="number" value={delayMax} onChange={e => setDelayMax(Number(e.target.value))} min={10} className={inputClass} />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-slate-500 mb-1 uppercase tracking-wider">Hourly Count</label>
-            <input type="number" value={hourlyCount} onChange={e => setHourlyCount(Number(e.target.value))} min={1} className={inputClass} />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-slate-500 mb-1 uppercase tracking-wider">Cycle Rest (min)</label>
+            <label className="block text-xs font-semibold text-slate-500 mb-1 uppercase tracking-wider">Cycle Rest (minutes)</label>
             <input type="number" value={cycleRest} onChange={e => setCycleRest(Number(e.target.value))} min={1} className={inputClass} />
+            <p className="text-[10px] text-slate-500 mt-1">Wait time before forwarding again</p>
           </div>
           <div className="flex items-end">
             <button onClick={saveForwardConfig}
-              className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-3 rounded-xl font-medium text-sm transition-all cursor-pointer">
-              Save
+              className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-[14px] rounded-xl font-medium text-sm transition-all cursor-pointer">
+              Save Time
             </button>
           </div>
         </div>
