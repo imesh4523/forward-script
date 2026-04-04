@@ -662,6 +662,25 @@ dist_path = "./dist" if os.path.exists("./dist") else "../frontend/dist"
 if os.path.exists(dist_path):
     app.mount("/assets", StaticFiles(directory=f"{dist_path}/assets"), name="assets")
 
+# ============================================
+# EMERGENCY DEBUG
+# ============================================
+@app.get("/api/debug/db")
+def debug_db():
+    results = {}
+    try:
+        with engine.connect() as conn:
+            for table in ["telegram_config", "sender_config", "target_groups", "forwarding_config"]:
+                try:
+                    # Use a plain string because text() is already imported
+                    res = conn.execute(text(f"SELECT * FROM {table} LIMIT 1"))
+                    results[table] = {"exists": True, "columns": list(res.keys())}
+                except Exception as e:
+                    results[table] = {"exists": False, "error": str(e)}
+        return results
+    except Exception as e:
+        return {"error": str(e)}
+
 @app.get("/{full_path:path}")
 async def catch_all(full_path: str):
     # If the path looks like an API call, it already failed 404
