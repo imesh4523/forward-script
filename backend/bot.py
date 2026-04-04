@@ -137,11 +137,10 @@ async def get_sender_joined_ids():
     try:
         snd = await get_sender_client()
         joined = set()
-        async for dialog in snd.iter_dialogs():
-            if dialog.is_group or dialog.is_channel:
-                joined.add(dialog.id)
-                u = getattr(dialog.entity, 'username', None)
-                if u: joined.add(f"@{u.lower()}")
+        async for dialog in snd.iter_dialogs(limit=None):
+            joined.add(dialog.id)
+            u = getattr(dialog.entity, 'username', None)
+            if u: joined.add(f"@{u.lower()}")
         return joined
     except Exception as e:
         add_log(f"⚠️ Could not fetch joined groups: {e}", "warn")
@@ -205,6 +204,14 @@ async def forward_message_to_group(channel_username, msg_id, group):
         
     except Exception as e:
         err = str(e).lower()
+        if "a wait of" in err and "seconds" in err:
+            try:
+                wait_time = int(''.join(filter(str.isdigit, str(e))))
+                group_next_allowed[group] = time.time() + wait_time + 10
+                add_log(f"⏳ Slow mode (@{group}): {wait_time}s penalty. Skipping this cycle.", "warn")
+                forward_stats["skipped"] += 1
+                return False
+            except: pass
         if "banned" in err:
             add_log(f"🚨 ACCOUNT BANNED: {err}", "error")
             is_running = False
@@ -212,6 +219,8 @@ async def forward_message_to_group(channel_username, msg_id, group):
         forward_stats["failed"] += 1
         add_log(f"❌ Failed (@{group}): {err}", "error")
         return False
+
+import random
 
 async def hourly_forward_loop(channel_username, msg_id, groups):
     global is_running, forward_stats
@@ -228,18 +237,32 @@ async def hourly_forward_loop(channel_username, msg_id, groups):
             add_log(f"🚀 Starting Parallel Cycle #{cycle_num}...", "info")
             
             joined_ids = await get_sender_joined_ids()
-            joined_groups = [g for g in groups if (g.lower() if isinstance(g, str) and g.startswith('@') else g) in joined_ids or (int(g) if isinstance(g, str) and g.lstrip('-').isdigit() else None) in joined_ids]
+            
+            def norm_g(g):
+                gs = str(g).strip().rstrip('/')
+                if 't.me/' in gs: return '@' + gs.split('t.me/')[-1].split('?')[0].lower()
+                if 'telegram.me/' in gs: return '@' + gs.split('telegram.me/')[-1].split('?')[0].lower()
+                if gs.startswith('@'): return gs.lower()
+                try: return int(gs)
+                except: return gs
+
+            joined_ids_norm = {norm_g(j) for j in joined_ids}
+            joined_groups = [g for g in groups if norm_g(g) in joined_ids_norm]
 
             if not joined_groups:
-                add_log("📋 No joined groups! Retrying in 60s...", "warn")
+                add_log("📋 No valid target groups detected! Check Target Groups list formatting.", "warn")
                 await asyncio.sleep(60)
                 continue
 
-            add_log(f"📊 Sending to {len(joined_groups)} joined groups at once...", "success")
+            add_log(f"📊 Sending to {len(joined_groups)} joined groups sequentially...", "success")
             forward_stats = {"success": 0, "skipped": 0, "failed": 0, "total": len(joined_groups)}
             
-            tasks = [forward_message_to_group(channel_username, msg_id, group) for group in joined_groups]
-            await asyncio.gather(*tasks)
+            for group in joined_groups:
+                if not is_running: break
+                await forward_message_to_group(channel_username, msg_id, group)
+                # Random human-like delay between 1.5 and 4.0 seconds to avoid trigger global spam filter array
+                human_delay = random.uniform(1.5, 4.0)
+                await asyncio.sleep(human_delay)
 
             if is_running:
                 add_log(f"🎉 Cycle #{cycle_num} Complete! ✅ {forward_stats['success']} sent. Next in {cycle_rest_minutes}m.", "success")
