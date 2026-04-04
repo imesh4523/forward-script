@@ -147,6 +147,22 @@ async def get_sender_joined_ids():
         add_log(f"⚠️ Could not fetch joined groups: {e}", "warn")
         return set()
 
+async def check_source_live(api_id, api_hash, phone):
+    try:
+        c = await get_source_client()
+        if not c: return False
+        if not c.is_connected(): await c.connect()
+        return await c.is_user_authorized()
+    except: return False
+
+async def check_sender_live(api_id, api_hash, phone):
+    try:
+        c = await get_sender_client()
+        if not c: return False
+        if not c.is_connected(): await c.connect()
+        return await c.is_user_authorized()
+    except: return False
+
 async def forward_message_to_group(channel_username, msg_id, group):
     global is_running, forward_stats, group_next_allowed
     
@@ -205,6 +221,10 @@ async def hourly_forward_loop(channel_username, msg_id, groups):
     while is_running:
         try:
             cycle_num += 1
+            with SessionLocal() as db:
+                fwd = db.query(ForwardingConfig).first()
+                cycle_rest_minutes = fwd.cycle_rest_minutes if fwd else 3
+
             add_log(f"🚀 Starting Parallel Cycle #{cycle_num}...", "info")
             
             joined_ids = await get_sender_joined_ids()

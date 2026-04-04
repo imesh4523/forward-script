@@ -88,6 +88,25 @@ function AuthPanel({ title, configUrl, authUrl, verifyUrl }) {
   const [otp, setOtp] = useState('')
   const [password, setPassword] = useState('')
   const [needsPassword, setNeedsPassword] = useState(false)
+  const [checking, setChecking] = useState(false)
+
+  const checkLiveStatus = async () => {
+    setChecking(true)
+    const liveUrl = authUrl.includes('sender') ? 'sender-auth/live' : 'auth/live'
+    try {
+      const res = await axios.get(`${API}/${liveUrl}`)
+      setIsLive(res.data.live)
+      // Only mark as fully not-authenticated if the backend says so AND we were already authenticated
+      if (!res.data.live) {
+        // We don't force authStatus false immediately to allow retries/refresh
+        // toast.error('Session seems dead or disconnected')
+      }
+    } catch {
+      toast.error('Check failed')
+    } finally {
+      setChecking(false)
+    }
+  }
 
   useEffect(() => {
     axios.get(`${API}/${configUrl}`).then(r => {
@@ -95,11 +114,7 @@ function AuthPanel({ title, configUrl, authUrl, verifyUrl }) {
       setAuthStatus(r.data.is_authenticated)
       
       if (r.data.is_authenticated) {
-        const liveUrl = authUrl.includes('sender') ? 'sender-auth/live' : 'auth/live'
-        axios.get(`${API}/${liveUrl}`).then(res => {
-          setIsLive(res.data.live)
-          if (!res.data.live) setAuthStatus(false)
-        }).catch(() => {})
+        checkLiveStatus()
       }
     }).catch(() => {})
   }, [configUrl, authUrl])
@@ -195,7 +210,10 @@ function AuthPanel({ title, configUrl, authUrl, verifyUrl }) {
           <>
             <div className={`flex items-center gap-2 text-sm px-3 py-2 rounded-lg border flex-1 ${isLive ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' : 'text-amber-400 bg-amber-500/10 border-amber-500/20'}`}>
               {isLive ? <Activity size={16} /> : <XCircle size={16} />} 
-              {isLive ? 'Live & Authenticated ✅' : 'Authenticated (Session Dead)'}
+              {isLive ? 'Live & Authenticated ✅' : 'Session Status Unknown / Re-check'}
+              <button onClick={checkLiveStatus} disabled={checking} className="ml-auto hover:bg-white/10 p-1 rounded-md transition-colors">
+                <RefreshCw size={14} className={checking ? 'animate-spin' : ''} />
+              </button>
             </div>
             <button onClick={logout} disabled={loading} className="flex items-center justify-center gap-1.5 bg-red-600/10 hover:bg-red-500/30 text-red-500 border border-red-500/20 px-4 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer disabled:opacity-50">
              {loading ? <Loader size={14} className="animate-spin" /> : <Trash2 size={14} />} Remove Account
@@ -269,6 +287,7 @@ function GroupsTab() {
   const [delayMax, setDelayMax] = useState(120)
   const [hourlyCount, setHourlyCount] = useState(3)
   const [joinDelay, setJoinDelay] = useState(60)
+  const [cycleRest, setCycleRest] = useState(3)
   const [totalSent, setTotalSent] = useState(0)
   const [loading, setLoading] = useState(false)
   const [detecting, setDetecting] = useState(false)
@@ -283,6 +302,7 @@ function GroupsTab() {
         setDelayMax(r.data.delay_max || 120)
         setHourlyCount(r.data.hourly_count || 3)
         setJoinDelay(r.data.join_delay_minutes || 60)
+        setCycleRest(r.data.cycle_rest_minutes || 3)
         setTotalSent(r.data.total_sent_count || 0)
       }
     }).catch(() => {})
@@ -334,6 +354,7 @@ function GroupsTab() {
         delay_max: delayMax, 
         hourly_count: hourlyCount, 
         join_delay_minutes: joinDelay,
+        cycle_rest_minutes: cycleRest,
         total_sent_count: totalSent
       })
       toast.success('Settings saved!')
@@ -398,11 +419,15 @@ function GroupsTab() {
             <input type="number" value={hourlyCount} onChange={e => setHourlyCount(Number(e.target.value))} min={1} className={inputClass} />
           </div>
           <div>
-            <label className="block text-xs font-semibold text-slate-500 mb-1 uppercase tracking-wider">Join Delay (min)</label>
-            <input type="number" value={joinDelay} onChange={e => setJoinDelay(Number(e.target.value))} min={1} className={inputClass} />
+            <label className="block text-xs font-semibold text-slate-500 mb-1 uppercase tracking-wider">Cycle Rest (min)</label>
+            <input type="number" value={cycleRest} onChange={e => setCycleRest(Number(e.target.value))} min={1} className={inputClass} />
           </div>
           <div className="flex items-end">
             <button onClick={saveForwardConfig}
+              className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-3 rounded-xl font-medium text-sm transition-all cursor-pointer">
+              Save
+            </button>
+          </div>
               className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-3 rounded-xl font-medium text-sm transition-all cursor-pointer">
               Save
             </button>

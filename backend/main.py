@@ -94,6 +94,7 @@ class ForwardConfigRequest(BaseModel):
     join_delay_minutes: Optional[int] = 60
     total_sent_count: Optional[int] = 0
     is_bot_running: Optional[bool] = False
+    cycle_rest_minutes: Optional[int] = 3
 
 class JoinRequest(BaseModel):
     group_links: List[str]
@@ -393,7 +394,8 @@ def update_forwarding_config(data: ForwardConfigRequest):
                     delay_max=data.delay_max, 
                     hourly_count=data.hourly_count, 
                     join_delay_minutes=data.join_delay_minutes,
-                    total_sent_count=data.total_sent_count or 0
+                    total_sent_count=data.total_sent_count or 0,
+                    cycle_rest_minutes=data.cycle_rest_minutes or 3
                 )
                 db.add(config)
             else:
@@ -402,6 +404,7 @@ def update_forwarding_config(data: ForwardConfigRequest):
                 config.delay_max = data.delay_max
                 config.hourly_count = data.hourly_count
                 config.join_delay_minutes = data.join_delay_minutes
+                config.cycle_rest_minutes = data.cycle_rest_minutes or 3
                 # Only update count if explicitly sent as non-zero or it's currently null
                 if data.total_sent_count is not None:
                     config.total_sent_count = data.total_sent_count

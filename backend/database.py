@@ -89,6 +89,7 @@ class ForwardingConfig(Base):
     join_delay_minutes = Column(Integer, default=60)
     total_sent_count = Column(Integer, default=0)
     is_bot_running = Column(Boolean, default=False)
+    cycle_rest_minutes = Column(Integer, default=3)
 
 # Grant permissions on public schema (required for DigitalOcean Managed PostgreSQL)
 def grant_schema_permissions():
@@ -120,6 +121,7 @@ def run_migrations():
                 "ALTER TABLE target_groups ADD COLUMN is_sender_joined BOOLEAN DEFAULT FALSE",
                 "ALTER TABLE forwarding_config ADD COLUMN total_sent_count INTEGER DEFAULT 0",
                 "ALTER TABLE forwarding_config ADD COLUMN is_bot_running BOOLEAN DEFAULT FALSE",
+                "ALTER TABLE forwarding_config ADD COLUMN cycle_rest_minutes INTEGER DEFAULT 3",
             ]:
                 try:
                     session.execute(text(stmt))
