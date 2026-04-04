@@ -223,7 +223,7 @@ async def hourly_forward_loop(channel_username, msg_id, groups):
             cycle_num += 1
             with SessionLocal() as db:
                 fwd = db.query(ForwardingConfig).first()
-                cycle_rest_minutes = fwd.cycle_rest_minutes if fwd else 3
+                cycle_rest_minutes = fwd.hourly_count if fwd else 3
 
             add_log(f"🚀 Starting Parallel Cycle #{cycle_num}...", "info")
             
